@@ -1,0 +1,29 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+# Payslip-AI Codebase Overview
+
+- **Backend** (Laravel/PHP):
+  - Controllers: [app/Http/Controllers](mdc:app/Http/Controllers)
+  - Middleware: [app/Http/Middleware](mdc:app/Http/Middleware)
+  - Requests: [app/Http/Requests](mdc:app/Http/Requests)
+  - Models: [app/Models](mdc:app/Models)
+  - Providers: [app/Providers](mdc:app/Providers)
+- **Routes**:
+  - Web/API definitions: [routes](mdc:routes)
+- **Database**:
+  - Migrations: [database/migrations](mdc:database/migrations)
+  - Seeders: [database/seeders](mdc:database/seeders)
+- **Frontend** (Vue.js/TypeScript):
+  - Pages: [resources/js/pages](mdc:resources/js/pages)
+  - Layouts: [resources/js/layouts](mdc:resources/js/layouts)
+  - UI Components: [resources/js/components/ui](mdc:resources/js/components/ui)
+  - Composables: [resources/js/composables](mdc:resources/js/composables)
+  - Libraries: [resources/js/lib](mdc:resources/js/lib)
+- **Configuration & Env**:
+  - App settings: [config](mdc:config)
+  - Environment template: [.env.example](mdc:.env.example)
+- **Documentation**:
+  - Main docs file: [docs/index.md](mdc:docs/index.md)

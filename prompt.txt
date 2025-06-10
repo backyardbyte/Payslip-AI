@@ -1,0 +1,54 @@
+AI Payslip Processing System Documentation Prompt
+
+Objective: Create clear, technical yet accessible documentation covering:
+
+1. System Overview
+
+# AI-Powered Payslip Processing System  
+**Purpose:** Automate loan eligibility checks for blacklisted individuals in Malaysia by analyzing payslip data.  
+
+**Key Features:**  
+- 📁 Multi-input processing (Web upload/Telegram/Email)  
+- 🔍 Hybrid OCR (Tesseract + GPT-4 Vision fallback)  
+- 📊 Rules engine for 50+ koperasi/bank criteria  
+- 🚀 Laravel-Vue admin dashboard with audit trails  
+
+2. Technical Architecture
+
+    Diagram
+
+    flowchart TB
+        A[User Uploads] --> B[Laravel API]
+        B --> C{OCR Engine}
+        C -->|Tesseract| D[Data Extraction]
+        C -->|GPT-4 Vision| D
+        D --> E[Eligibility Check]
+        E --> F[(MySQL DB)]
+        F --> G[Vue Dashboard]
+
+3. Core Components
+
+    A. OCR Module
+    Supported formats: PDF/PNG/JPEG (max 5MB)
+    Accuracy: 92% (Tesseract), 99% (GPT-4 Vision)
+
+    B. Eligibility Rules Engine
+    rules:
+    - koperasi: "Koperasi A"
+        peratus_gaji_bersih: 30
+    - koperasi: "Koperasi B"
+        pertaus_gaji_bersih: 40
+
+4. User Guides
+
+    For Staff:
+        Login at https://portal.tuahplan.com
+        Drag-drop payslip → View results in 15s
+
+    For Admins:
+        php artisan koperasi:add-rules --file=rules.json
+
+5. Compliance & Security
+
+    🛡️ PDPA-compliant anonymization
+    🚨 Alerts for suspicious uploads

@@ -1,0 +1,23 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+# n8n Integration Workflows
+
+This project uses n8n to automate payslip ingestion and processing:
+
+- **Trigger Nodes:**
+  - SFTP node monitors a remote directory (e.g., `/payslips`) for new files.
+  - Webhook or HTTP Trigger can also be used to start workflows on-demand.
+- **Processing Nodes:**
+  - File Transformation: Validate, convert, or enrich payslip files before upload.
+  - HTTP Request node sends a `POST` to the API endpoint: `/api/upload`.
+  - Configure `multipart/form-data` with the key `file` for the payslip payload.
+- **Endpoint Reference:**
+  - See the workflow sample in [docs/index.md#integration-with-n8n](mdc:docs/index.md#integration-with-n8n) for JSON details.
+- **Credential Management:**
+  - Store SFTP credentials in n8n's credentials section.
+  - Secure any API keys or tokens using n8n's encrypted credential storage.
+- **Activation:**
+  - Once configured, activate the workflow to enable automatic payslip processing.
