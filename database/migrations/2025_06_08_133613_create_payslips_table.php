@@ -18,6 +18,13 @@ return new class extends Migration
             $table->string('status')->default('pending'); // e.g., pending, processing, completed, failed
             $table->json('extracted_data')->nullable();
             $table->timestamps();
+            
+            // Add indexes for frequently queried columns
+            $table->index('user_id');
+            $table->index('status');
+            $table->index('created_at');
+            $table->index(['user_id', 'status']); // Composite index for common queries
+            $table->index(['user_id', 'created_at']); // For date-based queries
         });
     }
 

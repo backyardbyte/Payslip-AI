@@ -21,7 +21,7 @@ class KoperasiSeeder extends Seeder
         Koperasi::create([
             'name' => 'Koperasi Sejahtera Berhad',
             'rules' => [
-                'peratus_gaji_bersih' => 85,
+                'max_peratus_gaji_bersih' => 25, // Very strict - only eligible if percentage <= 25%
                 'min_gaji_pokok' => 2500,
                 'max_umur' => 55,
                 'min_tenure_months' => 12,
@@ -34,7 +34,7 @@ class KoperasiSeeder extends Seeder
         Koperasi::create([
             'name' => 'Koperasi Maju Jaya',
             'rules' => [
-                'peratus_gaji_bersih' => 90,
+                'max_peratus_gaji_bersih' => 50, // Moderate - eligible if percentage <= 50%
                 'min_gaji_pokok' => 2000,
                 'max_loan_amount' => 150000,
                 'blacklist_check' => false,
@@ -47,7 +47,7 @@ class KoperasiSeeder extends Seeder
         Koperasi::create([
             'name' => 'Koperasi Harapan Bangsa',
             'rules' => [
-                'peratus_gaji_bersih' => 80,
+                'max_peratus_gaji_bersih' => 30, // Strict - eligible if percentage <= 30%
                 'min_gaji_pokok' => 3000,
                 'max_umur' => 58,
                 'min_working_years' => 2,
@@ -60,7 +60,7 @@ class KoperasiSeeder extends Seeder
         Koperasi::create([
             'name' => 'Koperasi Cergas Malaysia',
             'rules' => [
-                'peratus_gaji_bersih' => 75,
+                'max_peratus_gaji_bersih' => 70, // Lenient - eligible if percentage <= 70%
                 'min_gaji_pokok' => 2800,
                 'max_debt_service_ratio' => 60,
                 'require_guarantor' => true,
@@ -73,7 +73,7 @@ class KoperasiSeeder extends Seeder
         Koperasi::create([
             'name' => 'Koperasi Pekerja Kerajaan',
             'rules' => [
-                'peratus_gaji_bersih' => 95,
+                'max_peratus_gaji_bersih' => 40, // Moderate-strict - eligible if percentage <= 40%
                 'min_gaji_pokok' => 1800,
                 'max_umur' => 60,
                 'employment_type' => 'government',
@@ -87,7 +87,7 @@ class KoperasiSeeder extends Seeder
         Koperasi::create([
             'name' => 'Koperasi Kredit Bersama',
             'rules' => [
-                'peratus_gaji_bersih' => 70,
+                'max_peratus_gaji_bersih' => 15, // Very strict - eligible if percentage <= 15%
                 'min_gaji_pokok' => 3500,
                 'max_umur' => 50,
                 'credit_score_min' => 650,

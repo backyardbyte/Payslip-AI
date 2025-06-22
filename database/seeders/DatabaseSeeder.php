@@ -22,6 +22,8 @@ class DatabaseSeeder extends Seeder
 
         $this->call([
             KoperasiSeeder::class,
+            RolesAndPermissionsSeeder::class,
+            SystemCredentialsSeeder::class,
         ]);
     }
 }

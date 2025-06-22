@@ -17,9 +17,17 @@ class Payslip extends Model
      */
     protected $fillable = [
         'user_id',
+        'batch_id',
         'file_path',
+        'original_filename',
         'status',
+        'processing_priority',
+        'processing_started_at',
+        'processing_completed_at',
+        'processing_error',
         'extracted_data',
+        'source',
+        'telegram_chat_id',
     ];
 
     /**
@@ -29,6 +37,8 @@ class Payslip extends Model
      */
     protected $casts = [
         'extracted_data' => 'array',
+        'processing_started_at' => 'datetime',
+        'processing_completed_at' => 'datetime',
     ];
 
     /**
@@ -39,5 +49,39 @@ class Payslip extends Model
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
+    }
+
+    /**
+     * Get the batch operation this payslip belongs to.
+     *
+     * @return \Illuminate\Database\Eloquent\Relations\BelongsTo
+     */
+    public function batchOperation(): BelongsTo
+    {
+        return $this->belongsTo(BatchOperation::class, 'batch_id', 'batch_id');
+    }
+
+    /**
+     * Scope for payslips in a specific batch.
+     */
+    public function scopeInBatch($query, string $batchId)
+    {
+        return $query->where('batch_id', $batchId);
+    }
+
+    /**
+     * Scope for payslips not in any batch.
+     */
+    public function scopeNotInBatch($query)
+    {
+        return $query->whereNull('batch_id');
+    }
+
+    /**
+     * Scope for high priority payslips.
+     */
+    public function scopeHighPriority($query)
+    {
+        return $query->where('processing_priority', '>', 0)->orderBy('processing_priority', 'desc');
     }
 }

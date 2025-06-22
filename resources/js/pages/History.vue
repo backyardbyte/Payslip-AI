@@ -1,4 +1,6 @@
 <template>
+    <Head title="History" />
+    
     <AppLayout>
         <div class="flex flex-col h-full gap-6 p-4 sm:p-6">
             <!-- Header -->
@@ -8,10 +10,12 @@
                     <p class="text-muted-foreground">View and analyze past payslip processing results</p>
                 </div>
                 <div class="flex gap-2">
-                    <Button variant="outline" size="sm" @click="exportData" :disabled="isExporting">
-                        <Download :class="['h-4 w-4 mr-2', isExporting && 'animate-pulse']" />
-                        {{ isExporting ? 'Exporting...' : 'Export CSV' }}
-                    </Button>
+                    <PermissionGuard permission="analytics.export">
+                        <Button variant="outline" size="sm" @click="exportData" :disabled="isExporting">
+                            <Download :class="['h-4 w-4 mr-2', isExporting && 'animate-pulse']" />
+                            {{ isExporting ? 'Exporting...' : 'Export CSV' }}
+                        </Button>
+                    </PermissionGuard>
                     <Button variant="outline" size="sm" @click="refreshData" :disabled="isLoading">
                         <RefreshCw :class="['h-4 w-4 mr-2', isLoading && 'animate-spin']" />
                         Refresh
@@ -20,60 +24,62 @@
             </div>
 
             <!-- Analytics Cards -->
-            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                <Card>
-                    <CardContent class="p-4">
-                        <div class="flex items-center space-x-2">
-                            <div class="p-2 bg-blue-100 rounded-lg dark:bg-blue-900/50">
-                                <FileText class="h-5 w-5 text-blue-600 dark:text-blue-400" />
+            <PermissionGuard permission="analytics.view">
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                    <Card>
+                        <CardContent>
+                            <div class="flex items-center space-x-2">
+                                <div class="p-2 bg-blue-100 rounded-lg dark:bg-blue-900/50">
+                                    <FileText class="h-5 w-5 text-blue-600 dark:text-blue-400" />
+                                </div>
+                                <div>
+                                    <p class="text-sm text-muted-foreground">Total Processed</p>
+                                    <p class="text-2xl font-bold">{{ analytics.totalProcessed }}</p>
+                                </div>
                             </div>
-                            <div>
-                                <p class="text-sm text-muted-foreground">Total Processed</p>
-                                <p class="text-2xl font-bold">{{ analytics.totalProcessed }}</p>
+                        </CardContent>
+                    </Card>
+                    <Card>
+                        <CardContent>
+                            <div class="flex items-center space-x-2">
+                                <div class="p-2 bg-green-100 rounded-lg dark:bg-green-900/50">
+                                    <CheckCircle class="h-5 w-5 text-green-600 dark:text-green-400" />
+                                </div>
+                                <div>
+                                    <p class="text-sm text-muted-foreground">Success Rate</p>
+                                    <p class="text-2xl font-bold">{{ analytics.successRate }}%</p>
+                                </div>
                             </div>
-                        </div>
-                    </CardContent>
-                </Card>
-                <Card>
-                    <CardContent class="p-4">
-                        <div class="flex items-center space-x-2">
-                            <div class="p-2 bg-green-100 rounded-lg dark:bg-green-900/50">
-                                <CheckCircle class="h-5 w-5 text-green-600 dark:text-green-400" />
+                        </CardContent>
+                    </Card>
+                    <Card>
+                        <CardContent>
+                            <div class="flex items-center space-x-2">
+                                <div class="p-2 bg-orange-100 rounded-lg dark:bg-orange-900/50">
+                                    <TrendingUp class="h-5 w-5 text-orange-600 dark:text-orange-400" />
+                                </div>
+                                <div>
+                                    <p class="text-sm text-muted-foreground">Avg. Salary</p>
+                                    <p class="text-2xl font-bold">RM {{ analytics.avgSalary.toLocaleString() }}</p>
+                                </div>
                             </div>
-                            <div>
-                                <p class="text-sm text-muted-foreground">Success Rate</p>
-                                <p class="text-2xl font-bold">{{ analytics.successRate }}%</p>
+                        </CardContent>
+                    </Card>
+                    <Card>
+                        <CardContent>
+                            <div class="flex items-center space-x-2">
+                                <div class="p-2 bg-purple-100 rounded-lg dark:bg-purple-900/50">
+                                    <Users class="h-5 w-5 text-purple-600 dark:text-purple-400" />
+                                </div>
+                                <div>
+                                    <p class="text-sm text-muted-foreground">Eligible Count</p>
+                                    <p class="text-2xl font-bold">{{ analytics.eligibleCount }}</p>
+                                </div>
                             </div>
-                        </div>
-                    </CardContent>
-                </Card>
-                <Card>
-                    <CardContent class="p-4">
-                        <div class="flex items-center space-x-2">
-                            <div class="p-2 bg-orange-100 rounded-lg dark:bg-orange-900/50">
-                                <TrendingUp class="h-5 w-5 text-orange-600 dark:text-orange-400" />
-                            </div>
-                            <div>
-                                <p class="text-sm text-muted-foreground">Avg. Salary</p>
-                                <p class="text-2xl font-bold">RM {{ analytics.avgSalary.toLocaleString() }}</p>
-                            </div>
-                        </div>
-                    </CardContent>
-                </Card>
-                <Card>
-                    <CardContent class="p-4">
-                        <div class="flex items-center space-x-2">
-                            <div class="p-2 bg-purple-100 rounded-lg dark:bg-purple-900/50">
-                                <Users class="h-5 w-5 text-purple-600 dark:text-purple-400" />
-                            </div>
-                            <div>
-                                <p class="text-sm text-muted-foreground">Eligible Count</p>
-                                <p class="text-2xl font-bold">{{ analytics.eligibleCount }}</p>
-                            </div>
-                        </div>
-                    </CardContent>
-                </Card>
-            </div>
+                        </CardContent>
+                    </Card>
+                </div>
+            </PermissionGuard>
 
             <!-- Filters -->
             <Card>
@@ -118,9 +124,12 @@
                     <div class="flex items-center justify-between">
                         <div>
                             <CardTitle>Processing History</CardTitle>
-                    <CardDescription>
+                            <CardDescription>
                                 {{ filteredHistory.length }} records found
-                    </CardDescription>
+                                <PermissionGuard permission="payslip.view_all" fallback>
+                                    <span class="text-muted-foreground"> (showing only your records)</span>
+                                </PermissionGuard>
+                            </CardDescription>
                         </div>
                     </div>
                 </CardHeader>
@@ -208,14 +217,27 @@
                                                     <Eye class="h-4 w-4 mr-2" />
                                                     View Details
                                                 </DropdownMenuItem>
-                                                <DropdownMenuItem @click="reprocess(record)">
-                                                    <RefreshCw class="h-4 w-4 mr-2" />
-                                                    Reprocess
-                                                </DropdownMenuItem>
-                                                <DropdownMenuItem @click="exportRecord(record)">
-                                                    <Download class="h-4 w-4 mr-2" />
-                                                    Export
-                                                </DropdownMenuItem>
+                                                <PermissionGuard permission="payslip.update">
+                                                    <DropdownMenuItem @click="reprocess(record)">
+                                                        <RefreshCw class="h-4 w-4 mr-2" />
+                                                        Reprocess
+                                                    </DropdownMenuItem>
+                                                </PermissionGuard>
+                                                <PermissionGuard permission="analytics.export">
+                                                    <DropdownMenuItem @click="exportRecord(record)">
+                                                        <Download class="h-4 w-4 mr-2" />
+                                                        Export
+                                                    </DropdownMenuItem>
+                                                </PermissionGuard>
+                                                <PermissionGuard permission="payslip.view_all">
+                                                    <DropdownMenuItem 
+                                                        @click="deleteRecord(record)"
+                                                        class="text-red-600 focus:text-red-600"
+                                                    >
+                                                        <Trash2 class="h-4 w-4 mr-2" />
+                                                        Delete
+                                                    </DropdownMenuItem>
+                                                </PermissionGuard>
                                             </DropdownMenuContent>
                                         </DropdownMenu>
                                     </TableCell>
@@ -320,6 +342,61 @@
                     </div>
                 </DialogContent>
             </Dialog>
+
+            <!-- Delete Confirmation Dialog -->
+            <Dialog v-model:open="isDeleteConfirmOpen">
+                <DialogContent class="max-w-md">
+                    <DialogHeader>
+                        <DialogTitle class="flex items-center gap-2 text-red-600">
+                            <Trash2 class="h-5 w-5" />
+                            Delete Payslip Record
+                        </DialogTitle>
+                    </DialogHeader>
+                    <div v-if="recordToDelete" class="space-y-4">
+                        <div class="text-sm text-muted-foreground">
+                            Are you sure you want to delete this payslip record?
+                        </div>
+                        
+                        <!-- Record Info -->
+                        <div class="p-3 border rounded-lg bg-muted/50">
+                            <div class="flex items-center space-x-3">
+                                <Avatar class="h-8 w-8">
+                                    <AvatarFallback class="text-xs bg-red-100 text-red-600">
+                                        {{ getInitials(recordToDelete.data?.nama || 'Unknown') }}
+                                    </AvatarFallback>
+                                </Avatar>
+                                <div>
+                                    <div class="font-medium text-sm">{{ recordToDelete.data?.nama || 'Unknown' }}</div>
+                                    <div class="text-xs text-muted-foreground">{{ recordToDelete.data?.no_gaji || 'N/A' }}</div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="text-sm text-red-600 font-medium">
+                            ⚠️ This action cannot be undone.
+                        </div>
+                        
+                        <!-- Action Buttons -->
+                        <div class="flex justify-end space-x-2 pt-2">
+                            <Button 
+                                variant="outline" 
+                                size="sm" 
+                                @click="cancelDelete"
+                            >
+                                Cancel
+                            </Button>
+                            <Button 
+                                variant="destructive" 
+                                size="sm" 
+                                @click="confirmDelete"
+                            >
+                                <Trash2 class="h-4 w-4 mr-2" />
+                                Delete
+                            </Button>
+                        </div>
+                    </div>
+                </DialogContent>
+            </Dialog>
         </div>
     </AppLayout>
 </template>
@@ -335,8 +412,11 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { 
     FileText, CheckCircle, TrendingUp, Users, Search, X, RefreshCw, Download,
-    LoaderCircle, MoreHorizontal, Eye, ChevronLeft, ChevronRight
+    LoaderCircle, MoreHorizontal, Eye, ChevronLeft, ChevronRight, Trash2
 } from 'lucide-vue-next';
+import { Head } from '@inertiajs/vue3';
+import PermissionGuard from '@/components/PermissionGuard.vue';
+import { usePermissions } from '@/composables/usePermissions';
 
 interface PayslipRecord {
     id: number;
@@ -362,6 +442,8 @@ const isLoading = ref(false);
 const isExporting = ref(false);
 const isDetailsOpen = ref(false);
 const selectedRecord = ref<PayslipRecord | null>(null);
+const isDeleteConfirmOpen = ref(false);
+const recordToDelete = ref<PayslipRecord | null>(null);
 const currentPage = ref(1);
 const pageSize = ref(10);
 
@@ -469,12 +551,17 @@ const formatDate = (dateString: string): string => {
 const fetchHistory = async () => {
     isLoading.value = true;
     try {
-        const response = await fetch('/api/payslips');
+        const response = await fetch('/api/payslips', {
+            headers: {
+                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '',
+                'Content-Type': 'application/json',
+            }
+        });
         if (response.ok) {
             history.value = await response.json();
         }
     } catch (e) {
-        console.error("Could not fetch history", e);
+        // Handle error silently or show user notification
     }
     isLoading.value = false;
 };
@@ -499,12 +586,58 @@ const viewDetails = (record: PayslipRecord) => {
 
 const reprocess = async (record: PayslipRecord) => {
     // Implementation for reprocessing
-    console.log('Reprocessing record:', record.id);
+    // Reprocessing record
 };
 
 const exportRecord = async (record: PayslipRecord) => {
     // Implementation for exporting single record
-    console.log('Exporting record:', record.id);
+    // Exporting record
+};
+
+const deleteRecord = (record: PayslipRecord) => {
+    recordToDelete.value = record;
+    isDeleteConfirmOpen.value = true;
+};
+
+const confirmDelete = async () => {
+    if (!recordToDelete.value) return;
+
+    try {
+        const response = await fetch(`/api/payslips/${recordToDelete.value.id}`, {
+            method: 'DELETE',
+            headers: {
+                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '',
+                'Content-Type': 'application/json',
+            }
+        });
+
+        if (response.ok) {
+            // Remove the record from the local array
+            const index = history.value.findIndex(h => h.id === recordToDelete.value!.id);
+            if (index > -1) {
+                history.value.splice(index, 1);
+            }
+            
+            // Show success message (you might want to use a toast notification system)
+            console.log('Record deleted successfully');
+        } else {
+            const error = await response.json();
+            console.error('Failed to delete record:', error);
+            alert('Failed to delete record. Please try again.');
+        }
+    } catch (error) {
+        console.error('Error deleting record:', error);
+        alert('An error occurred while deleting the record. Please try again.');
+    } finally {
+        // Close the confirmation dialog
+        isDeleteConfirmOpen.value = false;
+        recordToDelete.value = null;
+    }
+};
+
+const cancelDelete = () => {
+    isDeleteConfirmOpen.value = false;
+    recordToDelete.value = null;
 };
 
 const exportData = async () => {
@@ -536,10 +669,17 @@ const exportData = async () => {
         a.click();
         window.URL.revokeObjectURL(url);
     } catch (e) {
-        console.error("Export failed", e);
+        // Handle export error
     }
     isExporting.value = false;
 };
+
+const { 
+    canViewAllPayslips, 
+    canDeletePayslips, 
+    canViewAnalytics,
+    canExportAnalytics 
+} = usePermissions()
 
 onMounted(() => {
     fetchHistory();

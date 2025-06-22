@@ -12,6 +12,16 @@ use App\Models\Payslip;
 
 class SystemController extends Controller
 {
+    public function __construct()
+    {
+        $this->middleware('permission:system.view_health')->only(['health']);
+        $this->middleware('permission:system.view_statistics')->only(['statistics']);
+        $this->middleware('permission:system.clear_cache')->only(['clearCache']);
+        $this->middleware('permission:system.optimize_database')->only(['optimizeDatabase']);
+        $this->middleware('permission:system.cleanup')->only(['cleanup']);
+        $this->middleware('permission:system.clear_logs')->only(['clearLogs']);
+    }
+
     /**
      * Get system health information
      */

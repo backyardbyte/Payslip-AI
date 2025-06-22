@@ -209,6 +209,23 @@ class TestOcr extends Command
             }
         }
 
+        // Fallback calculation: If we have jumlah_pendapatan and jumlah_potongan but no gaji_bersih,
+        // calculate it: Gaji Bersih = Jumlah Pendapatan - Jumlah Potongan
+        if ($data['gaji_bersih'] === null && 
+            $data['jumlah_pendapatan'] !== null && 
+            $data['jumlah_potongan'] !== null) {
+            
+            $calculatedGajiBersih = $data['jumlah_pendapatan'] - $data['jumlah_potongan'];
+            
+            // Validate the calculated value is reasonable
+            if ($calculatedGajiBersih > 0 && $calculatedGajiBersih < 50000) {
+                $data['gaji_bersih'] = round($calculatedGajiBersih, 2);
+                $data['debug_patterns'][] = 'gaji_bersih calculated: ' . $data['gaji_bersih'] . ' (Pendapatan: ' . $data['jumlah_pendapatan'] . ' - Potongan: ' . $data['jumlah_potongan'] . ')';
+            } else {
+                $data['debug_patterns'][] = 'gaji_bersih calculation rejected: ' . $calculatedGajiBersih . ' (out of reasonable range)';
+            }
+        }
+
         return $data;
     }
 } 

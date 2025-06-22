@@ -4,6 +4,7 @@ namespace App\Jobs;
 
 use App\Models\Koperasi;
 use App\Models\Payslip;
+use App\Services\TelegramBotService;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -31,7 +32,10 @@ class ProcessPayslip implements ShouldQueue
      */
     public function handle(): void
     {
-        $this->payslip->update(['status' => 'processing']);
+        $this->payslip->update([
+            'status' => 'processing',
+            'processing_started_at' => now(),
+        ]);
 
         try {
             $path = Storage::path($this->payslip->file_path);
@@ -57,18 +61,30 @@ class ProcessPayslip implements ShouldQueue
             $extractedData = $this->extractPayslipData($text);
 
             $koperasiResults = [];
+            $detailedKoperasiResults = [];
             if ($extractedData['peratus_gaji_bersih'] !== null) {
                 $koperasis = Koperasi::where('is_active', true)->get();
                 foreach ($koperasis as $koperasi) {
-                    $koperasiResults[$koperasi->name] = $this->checkEligibility(
+                    $eligibilityCheck = $this->checkEligibility(
                         $extractedData['peratus_gaji_bersih'], 
-                        $koperasi->rules
+                        $koperasi->rules,
+                        $extractedData
                     );
+                    
+                    // Keep the old format for backward compatibility
+                    $koperasiResults[$koperasi->name] = $eligibilityCheck['eligible'];
+                    
+                    // Store detailed results for Telegram
+                    $detailedKoperasiResults[$koperasi->name] = [
+                        'eligible' => $eligibilityCheck['eligible'],
+                        'reasons' => $eligibilityCheck['reasons']
+                    ];
                 }
             }
 
             $this->payslip->update([
                 'status' => 'completed',
+                'processing_completed_at' => now(),
                 'extracted_data' => [
                     'peratus_gaji_bersih' => $extractedData['peratus_gaji_bersih'],
                     'gaji_bersih' => $extractedData['gaji_bersih'],
@@ -79,12 +95,24 @@ class ProcessPayslip implements ShouldQueue
                     'no_gaji' => $extractedData['no_gaji'],
                     'bulan' => $extractedData['bulan'],
                     'koperasi_results' => $koperasiResults,
+                    'detailed_koperasi_results' => $detailedKoperasiResults,
                     'debug_info' => [
                         'text_length' => strlen($text),
                         'extraction_patterns_found' => $extractedData['debug_patterns']
                     ]
                 ],
             ]);
+
+            // Send result to Telegram if this payslip came from Telegram
+            $this->sendTelegramNotification($detailedKoperasiResults);
+
+            // Update batch progress if this payslip is part of a batch
+            if ($this->payslip->batch_id) {
+                $batchOperation = $this->payslip->batchOperation;
+                if ($batchOperation) {
+                    $batchOperation->updateProgress();
+                }
+            }
 
         } catch (\Exception $e) {
             Log::error('Payslip processing failed for ID ' . $this->payslip->id, [
@@ -94,8 +122,21 @@ class ProcessPayslip implements ShouldQueue
             
             $this->payslip->update([
                 'status' => 'failed',
+                'processing_completed_at' => now(),
+                'processing_error' => $e->getMessage(),
                 'extracted_data' => ['error' => $e->getMessage()],
             ]);
+
+            // Send failure notification to Telegram if this payslip came from Telegram
+            $this->sendTelegramNotification([]);
+
+            // Update batch progress if this payslip is part of a batch
+            if ($this->payslip->batch_id) {
+                $batchOperation = $this->payslip->batchOperation;
+                if ($batchOperation) {
+                    $batchOperation->updateProgress();
+                }
+            }
         }
     }
 
@@ -424,16 +465,123 @@ class ProcessPayslip implements ShouldQueue
             }
         }
 
+        // Fallback calculation: If we have jumlah_pendapatan and jumlah_potongan but no gaji_bersih,
+        // calculate it: Gaji Bersih = Jumlah Pendapatan - Jumlah Potongan
+        $data['debug_patterns'][] = 'Calculation check - gaji_bersih: ' . ($data['gaji_bersih'] ?? 'null') . 
+                                   ', jumlah_pendapatan: ' . ($data['jumlah_pendapatan'] ?? 'null') . 
+                                   ', jumlah_potongan: ' . ($data['jumlah_potongan'] ?? 'null');
+        
+        if ($data['gaji_bersih'] === null && 
+            $data['jumlah_pendapatan'] !== null && 
+            $data['jumlah_potongan'] !== null) {
+            
+            $calculatedGajiBersih = $data['jumlah_pendapatan'] - $data['jumlah_potongan'];
+            
+            // Validate the calculated value is reasonable
+            if ($calculatedGajiBersih > 0 && $calculatedGajiBersih < 50000) {
+                $data['gaji_bersih'] = round($calculatedGajiBersih, 2);
+                $data['debug_patterns'][] = 'gaji_bersih calculated: ' . $data['gaji_bersih'] . ' (Pendapatan: ' . $data['jumlah_pendapatan'] . ' - Potongan: ' . $data['jumlah_potongan'] . ')';
+            } else {
+                $data['debug_patterns'][] = 'gaji_bersih calculation rejected: ' . $calculatedGajiBersih . ' (out of reasonable range)';
+            }
+        } else {
+            $data['debug_patterns'][] = 'Calculation skipped - conditions not met';
+        }
+
         return $data;
     }
 
-    private function checkEligibility(float $peratusGajiBersih, array $rules): bool
+    private function checkEligibility(float $peratusGajiBersih, array $rules, array $extractedData): array
     {
+        $eligible = true;
+        $reasons = [];
+        
+        // Check maximum percentage of net salary
         if (isset($rules['max_peratus_gaji_bersih'])) {
-            return $peratusGajiBersih <= $rules['max_peratus_gaji_bersih'];
+            if ($peratusGajiBersih > $rules['max_peratus_gaji_bersih']) {
+                $eligible = false;
+                $reasons[] = "Peratus gaji bersih ({$peratusGajiBersih}%) melebihi had maksimum ({$rules['max_peratus_gaji_bersih']}%)";
+            } else {
+                $reasons[] = "Peratus gaji bersih ({$peratusGajiBersih}%) memenuhi had maksimum ({$rules['max_peratus_gaji_bersih']}%)";
+            }
         }
 
-        // Default to eligible if no specific rule is found
-        return true;
+        // Check minimum basic salary
+        if (isset($rules['min_gaji_pokok']) && isset($extractedData['gaji_pokok'])) {
+            if ($extractedData['gaji_pokok'] < $rules['min_gaji_pokok']) {
+                $eligible = false;
+                $reasons[] = "Gaji pokok (RM " . number_format($extractedData['gaji_pokok'], 2) . ") kurang daripada minimum (RM " . number_format($rules['min_gaji_pokok'], 2) . ")";
+            } else {
+                $reasons[] = "Gaji pokok (RM " . number_format($extractedData['gaji_pokok'], 2) . ") memenuhi minimum (RM " . number_format($rules['min_gaji_pokok'], 2) . ")";
+            }
+        }
+
+        // Check minimum net salary
+        if (isset($rules['min_gaji_bersih']) && isset($extractedData['gaji_bersih'])) {
+            if ($extractedData['gaji_bersih'] < $rules['min_gaji_bersih']) {
+                $eligible = false;
+                $reasons[] = "Gaji bersih (RM " . number_format($extractedData['gaji_bersih'], 2) . ") kurang daripada minimum (RM " . number_format($rules['min_gaji_bersih'], 2) . ")";
+            } else {
+                $reasons[] = "Gaji bersih (RM " . number_format($extractedData['gaji_bersih'], 2) . ") memenuhi minimum (RM " . number_format($rules['min_gaji_bersih'], 2) . ")";
+            }
+        }
+
+        // Check maximum age (if available)
+        if (isset($rules['max_umur']) && isset($extractedData['umur'])) {
+            if ($extractedData['umur'] > $rules['max_umur']) {
+                $eligible = false;
+                $reasons[] = "Umur ({$extractedData['umur']}) melebihi had maksimum ({$rules['max_umur']})";
+            } else {
+                $reasons[] = "Umur ({$extractedData['umur']}) memenuhi had maksimum ({$rules['max_umur']})";
+            }
+        }
+
+        if (empty($reasons)) {
+            $reasons[] = "Tiada peraturan khusus - layak secara default";
+        }
+
+        return [
+            'eligible' => $eligible,
+            'reasons' => $reasons
+        ];
+    }
+
+    /**
+     * Send processing result to Telegram if payslip came from Telegram
+     */
+    private function sendTelegramNotification(array $detailedKoperasiResults): void
+    {
+        // Only send notification if payslip came from Telegram
+        if ($this->payslip->source !== 'telegram' || !$this->payslip->telegram_chat_id) {
+            return;
+        }
+
+        // Check if Telegram bot token is configured
+        $token = config('services.telegram.bot_token');
+        if (!$token) {
+            Log::warning("Skipping Telegram notification for payslip {$this->payslip->id}: Bot token not configured");
+            return;
+        }
+
+        try {
+            $telegramService = new TelegramBotService();
+            
+            // Format eligibility results for Telegram
+            $eligibilityResults = [];
+            foreach ($detailedKoperasiResults as $koperasiName => $result) {
+                $eligibilityResults[] = [
+                    'koperasi_name' => $koperasiName,
+                    'eligible' => $result['eligible'],
+                    'reasons' => $result['reasons']
+                ];
+            }
+
+            $telegramService->sendProcessingResult($this->payslip, $eligibilityResults);
+            
+            Log::info("Sent Telegram notification for payslip {$this->payslip->id} to chat {$this->payslip->telegram_chat_id}");
+
+        } catch (\Exception $e) {
+            Log::error("Failed to send Telegram notification for payslip {$this->payslip->id}: " . $e->getMessage());
+        }
     }
 }

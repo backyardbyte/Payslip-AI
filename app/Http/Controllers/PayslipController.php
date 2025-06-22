@@ -11,12 +11,24 @@ use Illuminate\Support\Facades\DB;
 
 class PayslipController extends Controller
 {
+    public function __construct()
+    {
+        $this->middleware('permission:payslip.view')->only(['index', 'show', 'queue', 'status']);
+        $this->middleware('permission:payslip.create')->only(['upload']);
+        $this->middleware('permission:payslip.delete')->only(['destroy', 'clearAll', 'clearCompleted', 'clearQueue']);
+        $this->middleware('permission:payslip.view_all')->only(['adminIndex']);
+    }
+
     public function index()
     {
-        // For now, assume user_id 1. In a real app, you'd use Auth::id()
-        $payslips = Payslip::where('user_id', Auth::id() ?? 1)
-            ->latest()
-            ->get();
+        $userId = Auth::id();
+        
+        // If user has view_all permission, show all payslips, otherwise only their own
+        if (Auth::user()->hasPermission('payslip.view_all')) {
+            $payslips = Payslip::with('user')->latest()->get();
+        } else {
+            $payslips = Payslip::where('user_id', $userId)->latest()->get();
+        }
 
         return response()->json($payslips->map(function (Payslip $p) {
             return [
@@ -27,6 +39,11 @@ class PayslipController extends Controller
                 'status' => $p->status,
                 'data' => $p->extracted_data,
                 'created_at' => $p->created_at->toIso8601String(),
+                'user' => $p->user ? [
+                    'id' => $p->user->id,
+                    'name' => $p->user->name,
+                    'email' => $p->user->email,
+                ] : null,
             ];
         }));
     }
@@ -37,7 +54,7 @@ class PayslipController extends Controller
      */
     public function queue()
     {
-        $userId = Auth::id() ?? 1;
+        $userId = Auth::id();
         
         // Get recent payslips that are still in queue/processing or recently completed
         $queuePayslips = Payslip::where('user_id', $userId)
@@ -75,37 +92,27 @@ class PayslipController extends Controller
      */
     public function clearQueue()
     {
-        $userId = Auth::id() ?? 1;
+        $userId = Auth::id();
         
-        // Only clear completed/failed items from the last 24 hours (not permanent history)
-        $payslips = Payslip::where('user_id', $userId)
-            ->where(function($query) {
-                $query->where('status', 'completed')
-                      ->where('created_at', '>=', now()->subHours(24))
-                      ->orWhere(function($subQuery) {
-                          $subQuery->where('status', 'failed')
-                                   ->where('created_at', '>=', now()->subHours(24));
-                      });
-            })
-            ->get();
+        // Build the query once for reuse
+        $baseQuery = Payslip::where('user_id', $userId)
+            ->where('created_at', '>=', now()->subHours(24))
+            ->whereIn('status', ['completed', 'failed']);
+        
+        // Get payslips with file paths for deletion
+        $payslips = $baseQuery->whereNotNull('file_path')->get(['id', 'file_path']);
         
         // Delete associated files
         foreach ($payslips as $payslip) {
-            if ($payslip->file_path && Storage::exists($payslip->file_path)) {
+            if (Storage::exists($payslip->file_path)) {
                 Storage::delete($payslip->file_path);
             }
         }
         
-        // Delete the payslips
+        // Delete the payslips in a single query
         $deletedCount = Payslip::where('user_id', $userId)
-            ->where(function($query) {
-                $query->where('status', 'completed')
-                      ->where('created_at', '>=', now()->subHours(24))
-                      ->orWhere(function($subQuery) {
-                          $subQuery->where('status', 'failed')
-                                   ->where('created_at', '>=', now()->subHours(24));
-                      });
-            })
+            ->where('created_at', '>=', now()->subHours(24))
+            ->whereIn('status', ['completed', 'failed'])
             ->delete();
 
         return response()->json([
@@ -116,29 +123,91 @@ class PayslipController extends Controller
 
     public function upload(Request $request)
     {
-        $request->validate([
-            'file' => ['required', 'file', 'mimes:pdf,png,jpg,jpeg', 'max:5120'],
-        ]);
+        try {
+            \Log::info('Upload request received', [
+                'user_id' => Auth::id(),
+                'has_file' => $request->hasFile('file'),
+                'files' => $request->allFiles(),
+            ]);
 
-        $path = $request->file('file')->store('payslips');
+            $request->validate([
+                'file' => [
+                    'required', 
+                    'file', 
+                    'mimes:pdf,png,jpg,jpeg', 
+                    'max:5120',
+                    // Removed dimensions validation as it was too restrictive for payslip images
+                ],
+            ]);
 
-        $payslip = Payslip::create([
-            'user_id' => Auth::id() ?? 1, // Fallback to user 1 if not authenticated for now
-            'file_path' => $path,
-            'status' => 'queued',
-        ]);
+            \Log::info('Validation passed');
 
-        ProcessPayslip::dispatch($payslip);
+            // Additional security checks
+            $file = $request->file('file');
+            $allowedMimeTypes = ['application/pdf', 'image/png', 'image/jpeg', 'image/jpg'];
+            
+            \Log::info('File details', [
+                'name' => $file->getClientOriginalName(),
+                'mime' => $file->getMimeType(),
+                'size' => $file->getSize(),
+            ]);
+            
+            if (!in_array($file->getMimeType(), $allowedMimeTypes)) {
+                \Log::error('Invalid file type', ['mime' => $file->getMimeType()]);
+                abort(422, 'Invalid file type detected.');
+            }
 
-        return response()->json(['job_id' => $payslip->id]);
+            // Check file size again (double validation)
+            if ($file->getSize() > 5242880) { // 5MB in bytes
+                \Log::error('File too large', ['size' => $file->getSize()]);
+                abort(422, 'File size exceeds maximum allowed size.');
+            }
+
+            $path = $request->file('file')->store('payslips');
+            \Log::info('File stored', ['path' => $path]);
+
+            // Ensure user is authenticated
+            if (!Auth::check()) {
+                \Log::error('User not authenticated');
+                abort(401, 'Authentication required to upload files.');
+            }
+
+            \Log::info('Creating payslip record', [
+                'user_id' => Auth::id(),
+                'file_path' => $path,
+            ]);
+
+            $payslip = Payslip::create([
+                'user_id' => Auth::id(),
+                'file_path' => $path,
+                'status' => 'queued',
+            ]);
+
+            \Log::info('Payslip created', ['id' => $payslip->id]);
+
+            ProcessPayslip::dispatch($payslip);
+            \Log::info('Job dispatched', ['payslip_id' => $payslip->id]);
+
+            return response()->json(['job_id' => $payslip->id]);
+
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            \Log::error('Validation failed', ['errors' => $e->errors()]);
+            return response()->json(['errors' => $e->errors()], 422);
+        } catch (\Exception $e) {
+            \Log::error('Upload failed', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            return response()->json(['error' => 'Upload failed: ' . $e->getMessage()], 500);
+        }
     }
 
     public function status(Payslip $payslip)
     {
-        // Add authorization check if needed
-        // if ($payslip->user_id !== Auth::id()) {
-        //     abort(403);
-        // }
+        // Check authorization - users can only view their own payslips unless they have view_all permission
+        if ($payslip->user_id !== Auth::id() && !Auth::user()->hasPermission('payslip.view_all')) {
+            abort(403, 'You can only view your own payslip status.');
+        }
 
         return response()->json([
             'job_id' => $payslip->id,
@@ -149,9 +218,16 @@ class PayslipController extends Controller
 
     public function destroy(Payslip $payslip)
     {
-        // Add authorization check
-        if ($payslip->user_id !== (Auth::id() ?? 1)) {
-            abort(403, 'Unauthorized');
+        // Check permission and ownership
+        if (!Auth::user()->hasPermission('payslip.delete') && 
+            !Auth::user()->hasPermission('payslip.view_all')) {
+            abort(403, 'You do not have permission to delete payslips.');
+        }
+
+        // If user doesn't have view_all permission, check ownership
+        if (!Auth::user()->hasPermission('payslip.view_all') && 
+            $payslip->user_id !== Auth::id()) {
+            abort(403, 'You can only delete your own payslips.');
         }
 
         // Delete the file from storage
@@ -166,7 +242,7 @@ class PayslipController extends Controller
 
     public function clearAll()
     {
-        $userId = Auth::id() ?? 1;
+        $userId = Auth::id();
         
         // Get all payslips for the user
         $payslips = Payslip::where('user_id', $userId)->get();
