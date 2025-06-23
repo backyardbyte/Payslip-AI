@@ -1,0 +1,411 @@
+<?php
+
+namespace Database\Seeders;
+
+use Illuminate\Database\Seeder;
+use App\Models\SettingCategory;
+use App\Models\SettingDefinition;
+use App\Models\SystemSetting;
+
+class SettingsSeeder extends Seeder
+{
+    /**
+     * Run the database seeds.
+     */
+    public function run(): void
+    {
+        // Create setting categories
+        $categories = [
+            [
+                'name' => 'general',
+                'display_name' => 'General Settings',
+                'description' => 'Basic system configuration and preferences',
+                'sort_order' => 1,
+            ],
+            [
+                'name' => 'ocr',
+                'display_name' => 'OCR Configuration',
+                'description' => 'Optical Character Recognition settings',
+                'sort_order' => 2,
+            ],
+            [
+                'name' => 'api',
+                'display_name' => 'API Settings',
+                'description' => 'API configuration and rate limiting',
+                'sort_order' => 3,
+            ],
+            [
+                'name' => 'advanced',
+                'display_name' => 'Advanced Settings',
+                'description' => 'Performance and optimization settings',
+                'sort_order' => 4,
+            ],
+            [
+                'name' => 'security',
+                'display_name' => 'Security Settings',
+                'description' => 'Security and authentication configuration',
+                'sort_order' => 5,
+            ],
+            [
+                'name' => 'notifications',
+                'display_name' => 'Notification Settings',
+                'description' => 'Email and notification preferences',
+                'sort_order' => 6,
+            ],
+        ];
+
+        foreach ($categories as $category) {
+            SettingCategory::updateOrCreate(
+                ['name' => $category['name']], 
+                $category
+            );
+        }
+
+        // Create setting definitions
+        $settings = [
+            // General Settings
+            [
+                'key' => 'general.system_name',
+                'display_name' => 'System Name',
+                'description' => 'The name of your Payslip AI system',
+                'category' => 'general',
+                'type' => 'string',
+                'default_value' => 'Payslip AI',
+                'validation_rules' => ['required', 'min:1', 'max:255'],
+                'sort_order' => 1,
+            ],
+            [
+                'key' => 'general.default_language',
+                'display_name' => 'Default Language',
+                'description' => 'Default language for the system',
+                'category' => 'general',
+                'type' => 'select',
+                'default_value' => 'en',
+                'options' => ['en' => 'English', 'ms' => 'Bahasa Malaysia'],
+                'validation_rules' => ['required', 'in:en,ms'],
+                'sort_order' => 2,
+            ],
+            [
+                'key' => 'general.enable_notifications',
+                'display_name' => 'Enable Notifications',
+                'description' => 'Enable system notifications',
+                'category' => 'general',
+                'type' => 'boolean',
+                'default_value' => '1',
+                'sort_order' => 3,
+            ],
+            [
+                'key' => 'general.auto_cleanup',
+                'display_name' => 'Auto Cleanup',
+                'description' => 'Automatically cleanup old files',
+                'category' => 'general',
+                'type' => 'boolean',
+                'default_value' => '1',
+                'sort_order' => 4,
+            ],
+            [
+                'key' => 'general.max_file_size',
+                'display_name' => 'Max File Size (MB)',
+                'description' => 'Maximum file size for uploads',
+                'category' => 'general',
+                'type' => 'integer',
+                'default_value' => '10',
+                'validation_rules' => ['required', 'integer', 'min:1', 'max:100'],
+                'sort_order' => 5,
+            ],
+            [
+                'key' => 'general.concurrent_processing',
+                'display_name' => 'Concurrent Processing',
+                'description' => 'Number of concurrent file processing jobs',
+                'category' => 'general',
+                'type' => 'integer',
+                'default_value' => '3',
+                'validation_rules' => ['required', 'integer', 'min:1', 'max:10'],
+                'sort_order' => 6,
+            ],
+            [
+                'key' => 'general.allowed_file_types',
+                'display_name' => 'Allowed File Types',
+                'description' => 'Allowed file types for upload',
+                'category' => 'general',
+                'type' => 'json',
+                'default_value' => '["pdf","png","jpg","jpeg"]',
+                'sort_order' => 7,
+            ],
+
+            // OCR Settings
+            [
+                'key' => 'ocr.engine',
+                'display_name' => 'OCR Engine',
+                'description' => 'OCR engine to use for text extraction',
+                'category' => 'ocr',
+                'type' => 'select',
+                'default_value' => 'tesseract',
+                'options' => ['tesseract' => 'Tesseract', 'paddleocr' => 'PaddleOCR'],
+                'validation_rules' => ['required', 'in:tesseract,paddleocr'],
+                'sort_order' => 1,
+            ],
+            [
+                'key' => 'ocr.dpi',
+                'display_name' => 'DPI Setting',
+                'description' => 'DPI setting for OCR processing',
+                'category' => 'ocr',
+                'type' => 'select',
+                'default_value' => '300',
+                'options' => ['150' => '150 DPI (Fast)', '300' => '300 DPI (Balanced)', '600' => '600 DPI (High Quality)'],
+                'validation_rules' => ['required', 'in:150,300,600'],
+                'sort_order' => 2,
+            ],
+            [
+                'key' => 'ocr.languages',
+                'display_name' => 'OCR Languages',
+                'description' => 'Languages supported by OCR',
+                'category' => 'ocr',
+                'type' => 'json',
+                'default_value' => '["eng","msa"]',
+                'sort_order' => 3,
+            ],
+            [
+                'key' => 'ocr.preprocessing',
+                'display_name' => 'Enable Preprocessing',
+                'description' => 'Enable image preprocessing for better OCR',
+                'category' => 'ocr',
+                'type' => 'boolean',
+                'default_value' => '1',
+                'sort_order' => 4,
+            ],
+            [
+                'key' => 'ocr.auto_rotate',
+                'display_name' => 'Auto Rotate',
+                'description' => 'Automatically rotate images for better OCR',
+                'category' => 'ocr',
+                'type' => 'boolean',
+                'default_value' => '1',
+                'sort_order' => 5,
+            ],
+            [
+                'key' => 'ocr.enhance_contrast',
+                'display_name' => 'Enhance Contrast',
+                'description' => 'Enhance image contrast for better OCR',
+                'category' => 'ocr',
+                'type' => 'boolean',
+                'default_value' => '0',
+                'sort_order' => 6,
+            ],
+            [
+                'key' => 'ocr.confidence_threshold',
+                'display_name' => 'Confidence Threshold',
+                'description' => 'Minimum confidence threshold for OCR results',
+                'category' => 'ocr',
+                'type' => 'integer',
+                'default_value' => '70',
+                'validation_rules' => ['required', 'integer', 'min:1', 'max:100'],
+                'sort_order' => 7,
+            ],
+
+            // API Settings
+            [
+                'key' => 'api.rate_limit_per_minute',
+                'display_name' => 'Rate Limit (Per Minute)',
+                'description' => 'API rate limit requests per minute',
+                'category' => 'api',
+                'type' => 'integer',
+                'default_value' => '60',
+                'validation_rules' => ['required', 'integer', 'min:10', 'max:1000'],
+                'sort_order' => 1,
+            ],
+            [
+                'key' => 'api.rate_limit_per_hour',
+                'display_name' => 'Rate Limit (Per Hour)',
+                'description' => 'API rate limit requests per hour',
+                'category' => 'api',
+                'type' => 'integer',
+                'default_value' => '1000',
+                'validation_rules' => ['required', 'integer', 'min:100', 'max:10000'],
+                'sort_order' => 2,
+            ],
+            [
+                'key' => 'api.enable_cors',
+                'display_name' => 'Enable CORS',
+                'description' => 'Enable Cross-Origin Resource Sharing',
+                'category' => 'api',
+                'type' => 'boolean',
+                'default_value' => '1',
+                'sort_order' => 3,
+            ],
+            [
+                'key' => 'api.require_auth',
+                'display_name' => 'Require Authentication',
+                'description' => 'Require authentication for API access',
+                'category' => 'api',
+                'type' => 'boolean',
+                'default_value' => '1',
+                'sort_order' => 4,
+            ],
+            [
+                'key' => 'api.log_requests',
+                'display_name' => 'Log API Requests',
+                'description' => 'Log all API requests for debugging',
+                'category' => 'api',
+                'type' => 'boolean',
+                'default_value' => '0',
+                'sort_order' => 6,
+            ],
+            [
+                'key' => 'api.enable_rate_limiting',
+                'display_name' => 'Enable Rate Limiting',
+                'description' => 'Enable API rate limiting based on configured limits',
+                'category' => 'api',
+                'type' => 'boolean',
+                'default_value' => '1',
+                'sort_order' => 7,
+            ],
+
+            // Advanced Settings
+            [
+                'key' => 'advanced.cache_duration',
+                'display_name' => 'Cache Duration (minutes)',
+                'description' => 'How long to cache settings and other data',
+                'category' => 'advanced',
+                'type' => 'integer',
+                'default_value' => '60',
+                'validation_rules' => ['required', 'integer', 'min:1', 'max:1440'],
+                'sort_order' => 1,
+            ],
+            [
+                'key' => 'advanced.queue_timeout',
+                'display_name' => 'Queue Timeout (Seconds)',
+                'description' => 'Queue job timeout in seconds',
+                'category' => 'advanced',
+                'type' => 'integer',
+                'default_value' => '300',
+                'validation_rules' => ['required', 'integer', 'min:30', 'max:3600'],
+                'sort_order' => 2,
+            ],
+            [
+                'key' => 'advanced.memory_limit',
+                'display_name' => 'Memory Limit (MB)',
+                'description' => 'Memory limit for processing',
+                'category' => 'advanced',
+                'type' => 'integer',
+                'default_value' => '512',
+                'validation_rules' => ['required', 'integer', 'min:128', 'max:2048'],
+                'sort_order' => 3,
+            ],
+            [
+                'key' => 'advanced.enable_debug_mode',
+                'display_name' => 'Enable Debug Mode',
+                'description' => 'Enable debug mode for troubleshooting',
+                'category' => 'advanced',
+                'type' => 'boolean',
+                'default_value' => '0',
+                'sort_order' => 4,
+            ],
+            [
+                'key' => 'advanced.enable_profiling',
+                'display_name' => 'Enable Profiling',
+                'description' => 'Enable performance profiling',
+                'category' => 'advanced',
+                'type' => 'boolean',
+                'default_value' => '0',
+                'sort_order' => 5,
+            ],
+            [
+                'key' => 'advanced.compress_images',
+                'display_name' => 'Compress Images',
+                'description' => 'Compress uploaded images to save space',
+                'category' => 'advanced',
+                'type' => 'boolean',
+                'default_value' => '1',
+                'sort_order' => 6,
+            ],
+
+            // Security Settings
+            [
+                'key' => 'security.session_timeout',
+                'display_name' => 'Session Timeout (Minutes)',
+                'description' => 'User session timeout in minutes',
+                'category' => 'security',
+                'type' => 'integer',
+                'default_value' => '120',
+                'validation_rules' => ['required', 'integer', 'min:15', 'max:480'],
+                'sort_order' => 1,
+            ],
+            [
+                'key' => 'security.password_min_length',
+                'display_name' => 'Minimum Password Length',
+                'description' => 'Minimum required password length',
+                'category' => 'security',
+                'type' => 'integer',
+                'default_value' => '8',
+                'validation_rules' => ['required', 'integer', 'min:6', 'max:32'],
+                'sort_order' => 2,
+            ],
+            [
+                'key' => 'security.require_password_complexity',
+                'display_name' => 'Require Password Complexity',
+                'description' => 'Require complex passwords with special characters',
+                'category' => 'security',
+                'type' => 'boolean',
+                'default_value' => '1',
+                'sort_order' => 3,
+            ],
+
+            // Notification Settings
+            [
+                'key' => 'notifications.email_from_address',
+                'display_name' => 'From Email Address',
+                'description' => 'Email address for outgoing notifications',
+                'category' => 'notifications',
+                'type' => 'email',
+                'default_value' => 'noreply@payslip-ai.com',
+                'validation_rules' => ['required', 'email'],
+                'sort_order' => 1,
+            ],
+            [
+                'key' => 'notifications.email_from_name',
+                'display_name' => 'From Name',
+                'description' => 'Name for outgoing email notifications',
+                'category' => 'notifications',
+                'type' => 'string',
+                'default_value' => 'Payslip AI',
+                'validation_rules' => ['required', 'min:1', 'max:255'],
+                'sort_order' => 2,
+            ],
+            [
+                'key' => 'notifications.enable_email',
+                'display_name' => 'Enable Email Notifications',
+                'description' => 'Enable email notifications',
+                'category' => 'notifications',
+                'type' => 'boolean',
+                'default_value' => '1',
+                'sort_order' => 3,
+            ],
+        ];
+
+        foreach ($settings as $setting) {
+            SettingDefinition::updateOrCreate(
+                ['key' => $setting['key']], 
+                $setting
+            );
+        }
+
+        // Create default system settings for current environment
+        $environment = config('app.env', 'production');
+        $definitions = SettingDefinition::all();
+        
+        foreach ($definitions as $definition) {
+            SystemSetting::updateOrCreate(
+                [
+                    'key' => $definition->key,
+                    'environment' => $environment
+                ],
+                [
+                    'value' => $definition->default_value
+                ]
+            );
+        }
+
+        $this->command->info('Settings seeded successfully!');
+    }
+} 

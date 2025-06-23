@@ -11,14 +11,19 @@ use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Http\JsonResponse;
+use App\Services\SettingsService;
 
 class BatchController extends ApiResponseController
 {
-    public function __construct()
+    protected SettingsService $settingsService;
+
+    public function __construct(SettingsService $settingsService)
     {
-        $this->middleware('permission:payslip.create')->only(['uploadBatch', 'createBatch']);
-        $this->middleware('permission:payslip.view')->only(['index', 'show', 'status']);
-        $this->middleware('permission:payslip.delete')->only(['cancel', 'destroy']);
+        $this->settingsService = $settingsService;
+        $this->middleware('permission:batch.view')->only(['index', 'show', 'status']);
+        $this->middleware('permission:batch.create')->only(['uploadBatch', 'createBatch']);
+        $this->middleware('permission:batch.delete')->only(['destroy', 'cancel']);
+        $this->middleware('permission:batch.view_all')->only(['statistics']);
     }
 
     /**
@@ -122,21 +127,23 @@ class BatchController extends ApiResponseController
      */
     public function uploadBatch(Request $request): JsonResponse
     {
+        // Get settings values
+        $maxFileSizeMB = $this->settingsService->get('general.max_file_size', 5);
+        $maxFileSizeKB = $maxFileSizeMB * 1024;
+        $maxFileSizeBytes = $maxFileSizeMB * 1024 * 1024;
+        $maxConcurrent = $this->settingsService->get('general.concurrent_processing', 5);
+        $allowedFileTypes = $this->settingsService->get('general.allowed_file_types', ['pdf', 'png', 'jpg', 'jpeg']);
+
         $validator = Validator::make($request->all(), [
-            'files' => 'required|array|min:2|max:50', // Batch must have 2-50 files
+            'files' => 'required|array|min:2|max:50',
             'files.*' => [
                 'required',
                 'file',
-                'mimes:pdf,png,jpg,jpeg',
-                'max:5120', // 5MB per file
-                // Removed dimensions validation as it was too restrictive for payslip images
+                'mimes:' . implode(',', $allowedFileTypes),
+                'max:' . $maxFileSizeKB
             ],
             'batch_name' => 'nullable|string|max:255',
             'settings' => 'nullable|array',
-            'settings.parallel_processing' => 'nullable|boolean',
-            'settings.max_concurrent' => 'nullable|integer|min:1|max:10',
-            'settings.priority' => 'nullable|in:low,normal,high',
-            'settings.processing_priority' => 'nullable|integer|min:0|max:100',
         ]);
 
         if ($validator->fails()) {
@@ -147,10 +154,10 @@ class BatchController extends ApiResponseController
         $batchName = $request->get('batch_name', 'Batch ' . now()->format('Y-m-d H:i:s'));
         $settings = $request->get('settings', []);
 
-        // Default settings
+        // Default settings with values from system settings
         $settings = array_merge([
             'parallel_processing' => true,
-            'max_concurrent' => 5,
+            'max_concurrent' => $maxConcurrent,
             'priority' => 'normal',
             'processing_priority' => 0,
         ], $settings);
@@ -168,25 +175,34 @@ class BatchController extends ApiResponseController
                 'metadata' => [
                     'upload_ip' => $request->ip(),
                     'user_agent' => $request->userAgent(),
+                    'max_file_size_mb' => $maxFileSizeMB,
+                    'allowed_file_types' => $allowedFileTypes,
                 ],
             ]);
 
             $payslips = [];
             $uploadErrors = [];
 
+            // Build allowed MIME types array
+            $allowedMimeTypesMap = [
+                'pdf' => 'application/pdf',
+                'png' => 'image/png', 
+                'jpg' => 'image/jpeg',
+                'jpeg' => 'image/jpeg'
+            ];
+            $allowedMimeTypes = array_values(array_intersect_key($allowedMimeTypesMap, array_flip($allowedFileTypes)));
+
             // Process each file
             foreach ($files as $index => $file) {
                 try {
-                    // Additional security checks
-                    $allowedMimeTypes = ['application/pdf', 'image/png', 'image/jpeg', 'image/jpg'];
-                    
+                    // Additional security checks with settings values
                     if (!in_array($file->getMimeType(), $allowedMimeTypes)) {
                         $uploadErrors[] = "File {$index}: Invalid file type detected.";
                         continue;
                     }
 
-                    if ($file->getSize() > 5242880) { // 5MB
-                        $uploadErrors[] = "File {$index}: File size exceeds maximum allowed size.";
+                    if ($file->getSize() > $maxFileSizeBytes) {
+                        $uploadErrors[] = "File {$index}: File size exceeds maximum allowed size of {$maxFileSizeMB}MB.";
                         continue;
                     }
 

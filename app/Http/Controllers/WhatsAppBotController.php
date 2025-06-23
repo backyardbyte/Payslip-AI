@@ -6,7 +6,7 @@ use App\Models\Koperasi;
 use App\Models\Payslip;
 use App\Models\User;
 use App\Jobs\ProcessPayslip;
-use App\Services\TelegramBotService;
+use App\Services\WhatsAppBotService;
 use App\Services\SettingsService;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
@@ -15,17 +15,17 @@ use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
 
-class TelegramBotController extends ApiResponseController
+class WhatsAppBotController extends ApiResponseController
 {
-    protected TelegramBotService $telegramService;
+    protected WhatsAppBotService $whatsAppService;
     protected SettingsService $settingsService;
 
-    public function __construct(TelegramBotService $telegramService, SettingsService $settingsService)
+    public function __construct(WhatsAppBotService $whatsAppService, SettingsService $settingsService)
     {
-        $this->telegramService = $telegramService;
+        $this->whatsAppService = $whatsAppService;
         $this->settingsService = $settingsService;
-        $this->middleware('permission:telegram.manage')->only(['setWebhook', 'deleteWebhook']);
-        $this->middleware('permission:telegram.view')->only(['getWebhookInfo', 'getBotInfo', 'getUpdates', 'sendMessage']);
+        $this->middleware('permission:whatsapp.manage')->only(['setWebhook', 'deleteWebhook']);
+        $this->middleware('permission:whatsapp.view')->only(['getWebhookInfo', 'getBotInfo', 'sendMessage']);
     }
 
     /**
@@ -121,14 +121,14 @@ class TelegramBotController extends ApiResponseController
     }
 
     /**
-     * Upload and process payslip via Telegram bot
+     * Upload and process payslip via WhatsApp bot
      */
     public function uploadPayslip(Request $request): JsonResponse
     {
         $validator = Validator::make($request->all(), [
-            'file' => 'required|file|mimes:pdf,png,jpg,jpeg|max:5120',
-            'telegram_user_id' => 'required|string',
-            'telegram_username' => 'nullable|string',
+            'file' => 'required|file|mimes:pdf,png,jpg,jpeg|max:16384', // 16MB for WhatsApp
+            'whatsapp_phone' => 'required|string',
+            'whatsapp_name' => 'nullable|string',
             'check_koperasi' => 'nullable|boolean',
             'koperasi_ids' => 'nullable|array',
             'koperasi_ids.*' => 'integer|exists:koperasi,id',
@@ -141,18 +141,20 @@ class TelegramBotController extends ApiResponseController
         try {
             // Store the file
             $file = $request->file('file');
-            $path = $file->store('payslips/telegram');
+            $path = $file->store('payslips/whatsapp');
 
             // Create payslip record
             $payslip = Payslip::create([
                 'user_id' => Auth::id(),
                 'file_path' => $path,
                 'status' => 'uploaded',
+                'source' => 'whatsapp',
                 'processing_priority' => 1,
+                'whatsapp_phone' => $request->whatsapp_phone,
                 'extracted_data' => [
-                    'telegram_user_id' => $request->telegram_user_id,
-                    'telegram_username' => $request->telegram_username,
-                    'uploaded_via' => 'telegram_bot',
+                    'whatsapp_phone' => $request->whatsapp_phone,
+                    'whatsapp_name' => $request->whatsapp_name,
+                    'uploaded_via' => 'whatsapp_bot',
                     'check_koperasi' => $request->boolean('check_koperasi', true),
                     'koperasi_ids' => $request->koperasi_ids,
                 ],
@@ -165,7 +167,7 @@ class TelegramBotController extends ApiResponseController
                 'payslip_id' => $payslip->id,
                 'status' => 'processing',
                 'message' => 'Payslip uploaded successfully and processing started',
-                'check_status_url' => route('api.telegram.payslip.status', $payslip->id),
+                'check_status_url' => route('api.whatsapp.payslip.status', $payslip->id),
             ], 'Payslip uploaded successfully', 201);
 
         } catch (\Exception $e) {
@@ -192,6 +194,7 @@ class TelegramBotController extends ApiResponseController
         $response = [
             'id' => $payslip->id,
             'status' => $payslip->status,
+            'source' => $payslip->source,
             'file_name' => basename($payslip->file_path),
             'created_at' => $payslip->created_at->toISOString(),
             'processing_started_at' => $payslip->processing_started_at?->toISOString(),
@@ -215,7 +218,7 @@ class TelegramBotController extends ApiResponseController
     }
 
     /**
-     * Get user's payslip history
+     * Get payslip processing history
      */
     public function getPayslipHistory(Request $request): JsonResponse
     {
@@ -225,20 +228,21 @@ class TelegramBotController extends ApiResponseController
         $query = Payslip::where('user_id', Auth::id())
             ->latest();
 
-        // Filter by Telegram uploads only
-        if ($request->boolean('telegram_only')) {
-            $query->whereJsonContains('extracted_data->uploaded_via', 'telegram_bot');
+        // Filter by WhatsApp uploads only
+        if ($request->boolean('whatsapp_only')) {
+            $query->where('source', 'whatsapp');
         }
 
         $payslips = $query->offset($offset)
             ->limit($limit)
-            ->get(['id', 'status', 'file_path', 'extracted_data', 'created_at', 'processing_completed_at']);
+            ->get(['id', 'status', 'source', 'file_path', 'extracted_data', 'created_at', 'processing_completed_at']);
 
         return $this->successResponse([
             'payslips' => $payslips->map(function ($p) {
                 return [
                     'id' => $p->id,
                     'status' => $p->status,
+                    'source' => $p->source,
                     'file_name' => basename($p->file_path),
                     'created_at' => $p->created_at->toISOString(),
                     'completed_at' => $p->processing_completed_at?->toISOString(),
@@ -261,7 +265,7 @@ class TelegramBotController extends ApiResponseController
         $stats = [
             'total_koperasi' => Koperasi::where('is_active', true)->count(),
             'total_payslips_processed' => Payslip::where('status', 'completed')->count(),
-            'telegram_uploads' => Payslip::whereJsonContains('extracted_data->uploaded_via', 'telegram_bot')->count(),
+            'whatsapp_uploads' => Payslip::where('source', 'whatsapp')->count(),
             'system_health' => 'healthy',
         ];
 
@@ -269,15 +273,14 @@ class TelegramBotController extends ApiResponseController
     }
 
     /**
-     * Create a new user for Telegram bot (if needed)
+     * Create a new user for WhatsApp bot (if needed)
      */
-    public function createTelegramUser(Request $request): JsonResponse
+    public function createWhatsAppUser(Request $request): JsonResponse
     {
         $validator = Validator::make($request->all(), [
-            'telegram_user_id' => 'required|string|unique:users,email',
-            'telegram_username' => 'nullable|string',
-            'first_name' => 'required|string|max:255',
-            'last_name' => 'nullable|string|max:255',
+            'whatsapp_phone' => 'required|string|unique:users,whatsapp_phone',
+            'whatsapp_name' => 'nullable|string',
+            'name' => 'required|string|max:255',
         ]);
 
         if ($validator->fails()) {
@@ -286,15 +289,17 @@ class TelegramBotController extends ApiResponseController
 
         try {
             $user = User::create([
-                'name' => trim($request->first_name . ' ' . $request->last_name),
-                'email' => $request->telegram_user_id . '@telegram.bot',
+                'name' => $request->name,
+                'email' => $request->whatsapp_phone . '@whatsapp.bot',
                 'password' => bcrypt(str()->random(32)),
                 'role_id' => 1, // Default role (adjust as needed)
                 'is_active' => true,
+                'whatsapp_phone' => $request->whatsapp_phone,
+                'whatsapp_name' => $request->whatsapp_name,
             ]);
 
             // Create API token for this user
-            $token = $user->createApiToken('telegram_bot', [
+            $token = $user->createApiToken('whatsapp_bot', [
                 'koperasi.view',
                 'payslip.create',
                 'payslip.view',
@@ -323,7 +328,7 @@ class TelegramBotController extends ApiResponseController
         if (isset($rules['max_peratus_gaji_bersih'])) {
             if ($data['peratus_gaji_bersih'] > $rules['max_peratus_gaji_bersih']) {
                 $eligible = false;
-                $reasons[] = "Percentage of net salary ({$data['peratus_gaji_bersih']}%) exceeds maximum allowed ({$rules['max_peratus_gaji_bersih']}%)";
+                $reasons[] = "Peratus gaji bersih ({$data['peratus_gaji_bersih']}%) melebihi had maksimum ({$rules['max_peratus_gaji_bersih']}%)";
             }
         }
 
@@ -331,7 +336,7 @@ class TelegramBotController extends ApiResponseController
         if (isset($rules['min_gaji_pokok'])) {
             if ($data['gaji_pokok'] < $rules['min_gaji_pokok']) {
                 $eligible = false;
-                $reasons[] = "Basic salary (RM {$data['gaji_pokok']}) is below minimum required (RM {$rules['min_gaji_pokok']})";
+                $reasons[] = "Gaji pokok (RM{$data['gaji_pokok']}) kurang dari minimum (RM{$rules['min_gaji_pokok']})";
             }
         }
 
@@ -339,25 +344,21 @@ class TelegramBotController extends ApiResponseController
         if (isset($rules['max_umur']) && isset($data['umur'])) {
             if ($data['umur'] > $rules['max_umur']) {
                 $eligible = false;
-                $reasons[] = "Age ({$data['umur']}) exceeds maximum allowed ({$rules['max_umur']})";
+                $reasons[] = "Umur ({$data['umur']} tahun) melebihi had maksimum ({$rules['max_umur']} tahun)";
             }
         }
 
-        // Check minimum net salary
-        if (isset($rules['min_gaji_bersih'])) {
-            if ($data['gaji_bersih'] < $rules['min_gaji_bersih']) {
+        // Check minimum age
+        if (isset($rules['min_umur']) && isset($data['umur'])) {
+            if ($data['umur'] < $rules['min_umur']) {
                 $eligible = false;
-                $reasons[] = "Net salary (RM {$data['gaji_bersih']}) is below minimum required (RM {$rules['min_gaji_bersih']})";
+                $reasons[] = "Umur ({$data['umur']} tahun) kurang dari minimum ({$rules['min_umur']} tahun)";
             }
-        }
-
-        if ($eligible) {
-            $reasons[] = "Meets all eligibility criteria";
         }
 
         return [
             'eligible' => $eligible,
-            'reasons' => $reasons,
+            'reasons' => $reasons
         ];
     }
 
@@ -367,6 +368,8 @@ class TelegramBotController extends ApiResponseController
             // Get settings
             $maxFileSizeMB = $this->settingsService->get('general.max_file_size', 5);
             $maxFileSizeKB = $maxFileSizeMB * 1024;
+            // WhatsApp typically supports larger files, so we'll use a higher limit but still respect settings
+            $whatsAppMaxSize = max($maxFileSizeKB, 16384); // At least 16MB for WhatsApp
             $allowedFileTypes = $this->settingsService->get('general.allowed_file_types', ['pdf', 'png', 'jpg', 'jpeg']);
 
             $validator = Validator::make($request->all(), [
@@ -374,11 +377,11 @@ class TelegramBotController extends ApiResponseController
                     'required',
                     'file',
                     'mimes:' . implode(',', $allowedFileTypes),
-                    'max:' . $maxFileSizeKB
+                    'max:' . $whatsAppMaxSize
                 ],
-                'chat_id' => 'required|string',
+                'phone_number' => 'required|string',
                 'user_id' => 'nullable|integer|exists:users,id',
-                'message_id' => 'nullable|integer',
+                'message_id' => 'nullable|string',
             ]);
 
             if ($validator->fails()) {

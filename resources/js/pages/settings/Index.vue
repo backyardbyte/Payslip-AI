@@ -156,10 +156,20 @@
                                     <div>
                                         <Label>Allowed File Types</Label>
                                         <div class="mt-2 flex flex-wrap gap-2">
-                                            <div v-for="type in ['pdf', 'png', 'jpg', 'jpeg']" :key="type" class="flex items-center space-x-2">
-                                                <Checkbox :checked="settings.general.allowedFileTypes.includes(type)" @update:checked="toggleFileType(type)" />
+                                            <div v-for="type in availableFileTypes" :key="type" class="flex items-center space-x-2">
+                                                <Checkbox :checked="settings.general.allowedFileTypes.includes(type)" @update:checked="(checked: boolean) => toggleFileType(type, checked)" />
                                                 <Label class="text-sm">{{ type.toUpperCase() }}</Label>
                                             </div>
+                                        </div>
+                                        <p class="text-sm text-muted-foreground mt-1">Select which file types are allowed for upload</p>
+                                        <!-- Debug info - remove in production -->
+                                        <div class="mt-2 p-2 bg-gray-100 dark:bg-gray-800 rounded text-xs">
+                                            <strong>Debug:</strong> Current allowedFileTypes: {{ JSON.stringify(settings.general.allowedFileTypes) }}
+                                            <br><strong>Available types:</strong> {{ JSON.stringify(availableFileTypes) }}
+                                            <br><strong>Checkbox states:</strong> 
+                                            <span v-for="type in availableFileTypes" :key="type">
+                                                {{ type }}={{ settings.general.allowedFileTypes.includes(type) }} 
+                                            </span>
                                         </div>
                                     </div>
                                 </CardContent>
@@ -196,7 +206,7 @@
                                         <Label>Languages</Label>
                                         <div class="mt-2 flex flex-wrap gap-2">
                                             <div v-for="lang in ocrLanguages" :key="lang.code" class="flex items-center space-x-2">
-                                                <Checkbox :checked="settings.ocr.languages.includes(lang.code)" @update:checked="toggleLanguage(lang.code)" />
+                                                <Checkbox :checked="settings.ocr.languages.includes(lang.code)" @update:checked="(checked: boolean) => toggleLanguage(lang.code, checked)" />
                                                 <Label class="text-sm">{{ lang.name }}</Label>
                                             </div>
                                         </div>
@@ -277,43 +287,63 @@
                                 </CardHeader>
                                 <CardContent class="space-y-4">
                                     <div>
-                                        <Label>Rate Limiting</Label>
-                                        <div class="mt-2 grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        <h3 class="text-lg font-medium mb-4">Rate Limiting</h3>
+                                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                                             <div>
-                                                <Label class="text-sm text-muted-foreground">Requests per minute</Label>
-                                                <input
-                                                    v-model.number="settings.api.rateLimitPerMinute"
-                                                    type="number"
-                                                    min="10"
+                                                <Label for="rateLimitPerMinute">Requests per minute</Label>
+                                                <Input 
+                                                    id="rateLimitPerMinute"
+                                                    v-model="settings.api.rateLimitPerMinute" 
+                                                    type="number" 
+                                                    min="1" 
                                                     max="1000"
-                                                    class="w-full mt-1 px-3 py-2 border border-input rounded-md bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                                                    class="mt-1"
                                                 />
+                                                <p class="text-sm text-muted-foreground mt-1">Maximum API requests per minute per user/IP</p>
                                             </div>
                                             <div>
-                                                <Label class="text-sm text-muted-foreground">Requests per hour</Label>
-                                                <input
-                                                    v-model.number="settings.api.rateLimitPerHour"
-                                                    type="number"
-                                                    min="100"
+                                                <Label for="rateLimitPerHour">Requests per hour</Label>
+                                                <Input 
+                                                    id="rateLimitPerHour"
+                                                    v-model="settings.api.rateLimitPerHour" 
+                                                    type="number" 
+                                                    min="1" 
                                                     max="10000"
-                                                    class="w-full mt-1 px-3 py-2 border border-input rounded-md bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                                                    class="mt-1"
                                                 />
+                                                <p class="text-sm text-muted-foreground mt-1">Maximum API requests per hour per user/IP</p>
                                             </div>
                                         </div>
                                     </div>
 
-                                    <div class="space-y-3">
+                                    <div class="space-y-4">
                                         <div class="flex items-center space-x-2">
-                                            <Checkbox v-model:checked="settings.api.enableCors" />
-                                            <Label>Enable CORS</Label>
+                                            <Checkbox 
+                                                id="enableRateLimit"
+                                                v-model:checked="settings.api.enableRateLimit"
+                                            />
+                                            <Label for="enableRateLimit">Enable API Rate Limiting</Label>
                                         </div>
                                         <div class="flex items-center space-x-2">
-                                            <Checkbox v-model:checked="settings.api.requireAuth" />
-                                            <Label>Require authentication for API access</Label>
+                                            <Checkbox 
+                                                id="enableCors"
+                                                v-model:checked="settings.api.enableCors"
+                                            />
+                                            <Label for="enableCors">Enable CORS</Label>
                                         </div>
                                         <div class="flex items-center space-x-2">
-                                            <Checkbox v-model:checked="settings.api.logRequests" />
-                                            <Label>Log API requests</Label>
+                                            <Checkbox 
+                                                id="requireAuth"
+                                                v-model:checked="settings.api.requireAuth"
+                                            />
+                                            <Label for="requireAuth">Require authentication for API access</Label>
+                                        </div>
+                                        <div class="flex items-center space-x-2">
+                                            <Checkbox 
+                                                id="logRequests"
+                                                v-model:checked="settings.api.logRequests"
+                                            />
+                                            <Label for="logRequests">Log API requests</Label>
                                         </div>
                                     </div>
                                 </CardContent>
@@ -326,32 +356,42 @@
                                 </CardHeader>
                                 <CardContent class="space-y-4">
                                     <div>
-                                        <Label>Webhook URL</Label>
-                                        <input
-                                            v-model="settings.api.webhookUrl"
-                                            type="url"
-                                            placeholder="https://your-app.com/webhook"
-                                            class="w-full mt-1 px-3 py-2 border border-input rounded-md bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-                                        />
-                                    </div>
-                                    <div>
-                                        <Label>Webhook Secret</Label>
-                                        <input
-                                            v-model="settings.api.webhookSecret"
-                                            type="password"
-                                            placeholder="Secret key for webhook verification"
-                                            class="w-full mt-1 px-3 py-2 border border-input rounded-md bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-                                        />
-                                    </div>
-                                    <div class="flex items-center justify-between">
-                                        <div class="flex items-center space-x-2">
-                                            <Checkbox v-model:checked="settings.api.enableWebhooks" />
-                                            <Label>Enable webhooks</Label>
+                                        <h3 class="text-lg font-medium mb-4">Webhook Configuration</h3>
+                                        <div class="space-y-4">
+                                            <div>
+                                                <Label for="webhookUrl">Webhook URL</Label>
+                                                <Input 
+                                                    id="webhookUrl"
+                                                    v-model="settings.api.webhookUrl" 
+                                                    type="url"
+                                                    placeholder="https://your-app.com/webhook"
+                                                    class="mt-1"
+                                                />
+                                                <p class="text-sm text-muted-foreground mt-1">URL to receive processing completion notifications</p>
+                                            </div>
+                                            <div>
+                                                <Label for="webhookSecret">Webhook Secret</Label>
+                                                <Input 
+                                                    id="webhookSecret"
+                                                    v-model="settings.api.webhookSecret" 
+                                                    type="password"
+                                                    placeholder="Secret key for webhook verification"
+                                                    class="mt-1"
+                                                />
+                                                <p class="text-sm text-muted-foreground mt-1">Secret key used to verify webhook authenticity</p>
+                                            </div>
+                                            <div class="flex items-center space-x-2">
+                                                <Checkbox 
+                                                    id="enableWebhooks"
+                                                    v-model:checked="settings.api.enableWebhooks"
+                                                />
+                                                <Label for="enableWebhooks">Enable webhooks</Label>
+                                            </div>
+                                            <Button v-if="settings.api.enableWebhooks" variant="outline" size="sm">
+                                                <Zap class="h-4 w-4 mr-2" />
+                                                Test Webhook
+                                            </Button>
                                         </div>
-                                        <Button variant="outline" size="sm" @click="testWebhook">
-                                            <TestTube class="h-4 w-4 mr-2" />
-                                            Test Webhook
-                                        </Button>
                                     </div>
                                 </CardContent>
                             </Card>
@@ -365,56 +405,74 @@
                                     <CardDescription>Advanced performance and optimization settings</CardDescription>
                                 </CardHeader>
                                 <CardContent class="space-y-4">
-                                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                        <div>
-                                            <Label>Cache Duration (minutes)</Label>
-                                            <input
-                                                v-model.number="settings.advanced.cacheDuration"
-                                                type="number"
-                                                min="5"
-                                                max="1440"
-                                                class="w-full mt-1 px-3 py-2 border border-input rounded-md bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-                                            />
-                                        </div>
-                                        <div>
-                                            <Label>Queue Timeout (seconds)</Label>
-                                            <input
-                                                v-model.number="settings.advanced.queueTimeout"
-                                                type="number"
-                                                min="30"
-                                                max="3600"
-                                                class="w-full mt-1 px-3 py-2 border border-input rounded-md bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-                                            />
+                                    <div>
+                                        <h3 class="text-lg font-medium mb-4">Performance Tuning</h3>
+                                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                            <div>
+                                                <Label for="cacheDuration">Cache Duration (minutes)</Label>
+                                                <Input 
+                                                    id="cacheDuration"
+                                                    v-model="settings.advanced.cacheDuration" 
+                                                    type="number" 
+                                                    min="5" 
+                                                    max="1440"
+                                                    class="mt-1"
+                                                />
+                                                <p class="text-sm text-muted-foreground mt-1">How long to cache settings and other data</p>
+                                            </div>
+                                            <div>
+                                                <Label for="queueTimeout">Queue Timeout (seconds)</Label>
+                                                <Input 
+                                                    id="queueTimeout"
+                                                    v-model="settings.advanced.queueTimeout" 
+                                                    type="number" 
+                                                    min="60" 
+                                                    max="3600"
+                                                    class="mt-1"
+                                                />
+                                                <p class="text-sm text-muted-foreground mt-1">Maximum time for processing jobs before timeout</p>
+                                            </div>
                                         </div>
                                     </div>
 
                                     <div>
-                                        <Label>Memory Limit (MB)</Label>
-                                        <div class="mt-2 flex items-center space-x-4">
-                                            <input
-                                                v-model.number="settings.advanced.memoryLimit"
-                                                type="range"
-                                                min="128"
-                                                max="2048"
-                                                step="128"
+                                        <Label for="memoryLimit">Memory Limit (MB)</Label>
+                                        <div class="flex items-center space-x-4 mt-2">
+                                            <input 
+                                                type="range" 
+                                                id="memoryLimit"
+                                                v-model="settings.advanced.memoryLimit" 
+                                                min="128" 
+                                                max="2048" 
+                                                step="64"
                                                 class="flex-1"
                                             />
-                                            <span class="text-sm font-mono w-16">{{ settings.advanced.memoryLimit }}MB</span>
+                                            <span class="text-sm font-medium min-w-[60px]">{{ settings.advanced.memoryLimit }}MB</span>
                                         </div>
+                                        <p class="text-sm text-muted-foreground mt-1">Memory limit for processing jobs</p>
                                     </div>
 
-                                    <div class="space-y-3">
+                                    <div class="space-y-4">
                                         <div class="flex items-center space-x-2">
-                                            <Checkbox v-model:checked="settings.advanced.enableDebugMode" />
-                                            <Label>Enable debug mode</Label>
+                                            <Checkbox 
+                                                id="enableDebugMode"
+                                                v-model:checked="settings.advanced.enableDebugMode"
+                                            />
+                                            <Label for="enableDebugMode">Enable debug mode</Label>
                                         </div>
                                         <div class="flex items-center space-x-2">
-                                            <Checkbox v-model:checked="settings.advanced.enableProfiling" />
-                                            <Label>Enable performance profiling</Label>
+                                            <Checkbox 
+                                                id="enableProfiling"
+                                                v-model:checked="settings.advanced.enableProfiling"
+                                            />
+                                            <Label for="enableProfiling">Enable performance profiling</Label>
                                         </div>
                                         <div class="flex items-center space-x-2">
-                                            <Checkbox v-model:checked="settings.advanced.compressImages" />
-                                            <Label>Compress uploaded images</Label>
+                                            <Checkbox 
+                                                id="compressImages"
+                                                v-model:checked="settings.advanced.compressImages"
+                                            />
+                                            <Label for="compressImages">Compress uploaded images</Label>
                                         </div>
                                     </div>
                                 </CardContent>
@@ -426,34 +484,32 @@
                                     <CardDescription>System maintenance and cleanup options</CardDescription>
                                 </CardHeader>
                                 <CardContent class="space-y-4">
-                                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                        <Button variant="outline" @click="clearCache" :disabled="isClearing">
-                                            <Trash2 :class="['h-4 w-4 mr-2', isClearing && 'animate-pulse']" />
-                                            {{ isClearing ? 'Clearing...' : 'Clear Cache' }}
+                                    <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                                        <Button variant="outline" size="sm">
+                                            <Trash2 class="h-4 w-4 mr-2" />
+                                            Clear Cache
                                         </Button>
-                                        <Button variant="outline" @click="clearLogs" :disabled="isClearing">
-                                            <FileText :class="['h-4 w-4 mr-2', isClearing && 'animate-pulse']" />
-                                            {{ isClearing ? 'Clearing...' : 'Clear Logs' }}
+                                        <Button variant="outline" size="sm">
+                                            <FileText class="h-4 w-4 mr-2" />
+                                            Clear Logs
                                         </Button>
-                                        <Button variant="outline" @click="optimizeDatabase" :disabled="isOptimizing">
-                                            <Database :class="['h-4 w-4 mr-2', isOptimizing && 'animate-spin']" />
-                                            {{ isOptimizing ? 'Optimizing...' : 'Optimize Database' }}
+                                        <Button variant="outline" size="sm">
+                                            <Database class="h-4 w-4 mr-2" />
+                                            Optimize Database
                                         </Button>
-                                        <Button variant="outline" @click="runHealthCheck" :disabled="isChecking">
-                                            <Activity :class="['h-4 w-4 mr-2', isChecking && 'animate-pulse']" />
-                                            {{ isChecking ? 'Checking...' : 'Run Health Check' }}
+                                        <Button variant="outline" size="sm">
+                                            <Activity class="h-4 w-4 mr-2" />
+                                            Run Health Check
                                         </Button>
                                     </div>
 
-                                    <div class="pt-4 border-t">
-                                        <h4 class="font-medium text-destructive mb-2">Danger Zone</h4>
+                                    <div class="border-t pt-6">
+                                        <h3 class="text-lg font-medium mb-4 text-red-600 dark:text-red-400">Danger Zone</h3>
                                         <p class="text-sm text-muted-foreground mb-4">These actions cannot be undone.</p>
-                                        <div class="flex gap-2">
-                                            <Button variant="destructive" size="sm" @click="showResetConfirmation = true">
-                                                <AlertTriangle class="h-4 w-4 mr-2" />
-                                                Reset System
-                                            </Button>
-                                        </div>
+                                        <Button variant="destructive" size="sm">
+                                            <AlertTriangle class="h-4 w-4 mr-2" />
+                                            Reset System
+                                        </Button>
                                     </div>
                                 </CardContent>
                             </Card>
@@ -507,7 +563,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue';
+import { ref, onMounted, nextTick } from 'vue';
 import AppLayout from '@/layouts/AppLayout.vue';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -516,10 +572,11 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { 
     Settings, Eye, Cpu, Database, Activity, Save, RotateCcw, Plus, Trash2, 
-    TestTube, FileText, AlertTriangle, Shield
+    TestTube, FileText, AlertTriangle, Shield, Zap
 } from 'lucide-vue-next';
 import { usePermissions } from '@/composables/usePermissions';
 import { Head } from '@inertiajs/vue3';
+import { Input } from '@/components/ui/input';
 
 const activeTab = ref('general');
 const isSaving = ref(false);
@@ -574,6 +631,7 @@ const settings = ref({
     api: {
         rateLimitPerMinute: 60,
         rateLimitPerHour: 1000,
+        enableRateLimit: true,
         enableCors: true,
         requireAuth: true,
         logRequests: true,
@@ -593,6 +651,22 @@ const settings = ref({
 
 const { canManageSettings, canViewSystemHealth } = usePermissions();
 
+// Available file types that can be enabled/disabled
+const availableFileTypes = ['pdf', 'png', 'jpg', 'jpeg'];
+
+onMounted(() => {
+    console.log('Settings page mounted');
+    console.log('canManageSettings:', canManageSettings.value);
+    console.log('canViewSystemHealth:', canViewSystemHealth.value);
+    
+    // Temporarily always fetch settings for testing
+    fetchSettings();
+    
+    if (canViewSystemHealth.value) {
+        fetchSystemHealth();
+    }
+});
+
 const fetchSystemHealth = async () => {
     try {
         const response = await fetch('/api/system/health', {
@@ -606,18 +680,179 @@ const fetchSystemHealth = async () => {
             systemHealth.value = data;
         }
     } catch (e) {
-        // Handle health check error
+        console.error('Failed to fetch system health:', e);
+    }
+};
+
+const fetchSettings = async () => {
+    try {
+        const response = await fetch('/api/settings/', {
+            method: 'GET',
+            credentials: 'same-origin', // Include cookies for session auth
+            headers: {
+                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '',
+                'Content-Type': 'application/json',
+                'Accept': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest', // Laravel expects this for AJAX
+            }
+        });
+        
+        console.log('Settings API Response Status:', response.status);
+        
+        if (response.ok) {
+            const data = await response.json();
+            console.log('Settings API Response Data:', data);
+            
+            if (data.success && data.data && data.data.settings) {
+                const apiSettings = data.data.settings;
+                console.log('API Settings Structure:', apiSettings);
+                
+                // Helper function to safely get setting value
+                const getSetting = (category: string, key: string, defaultValue: any) => {
+                    const value = apiSettings[category]?.[key];
+                    console.log(`Getting ${category}.${key}:`, value, 'default:', defaultValue);
+                    
+                    // Handle JSON type settings that should be arrays
+                    if (key === 'general.allowed_file_types' || key === 'ocr.languages') {
+                        // If it's already an array, use it as is
+                        if (Array.isArray(value)) {
+                            return value;
+                        }
+                        // If it's a string, try to parse it
+                        if (typeof value === 'string') {
+                            try {
+                                return JSON.parse(value);
+                            } catch (e) {
+                                console.warn('Failed to parse JSON setting:', key, value);
+                                return defaultValue;
+                            }
+                        }
+                    }
+                    
+                    return value !== undefined && value !== null ? value : defaultValue;
+                };
+                
+                // Map API settings to component structure - fix boolean handling
+                settings.value.general = {
+                    systemName: getSetting('general', 'general.system_name', 'Payslip AI'),
+                    defaultLanguage: getSetting('general', 'general.default_language', 'en'),
+                    enableNotifications: getSetting('general', 'general.enable_notifications', true),
+                    autoCleanup: getSetting('general', 'general.auto_cleanup', true),
+                    maxFileSize: getSetting('general', 'general.max_file_size', 10),
+                    concurrentProcessing: getSetting('general', 'general.concurrent_processing', 3),
+                    allowedFileTypes: getSetting('general', 'general.allowed_file_types', ['pdf', 'png', 'jpg', 'jpeg']),
+                };
+                
+                settings.value.ocr = {
+                    engine: getSetting('ocr', 'ocr.engine', 'tesseract'),
+                    dpi: getSetting('ocr', 'ocr.dpi', '300'),
+                    languages: getSetting('ocr', 'ocr.languages', ['eng', 'msa']),
+                    preprocessing: getSetting('ocr', 'ocr.preprocessing', true),
+                    autoRotate: getSetting('ocr', 'ocr.auto_rotate', true),
+                    enhanceContrast: getSetting('ocr', 'ocr.enhance_contrast', false),
+                    confidenceThreshold: getSetting('ocr', 'ocr.confidence_threshold', 70),
+                    customPatterns: [
+                        { name: 'Gaji Bersih', regex: 'Gaji\\s+Bersih.*?([\\d,]+\\.\\d{2})' },
+                        { name: 'Peratus Gaji Bersih', regex: '%\\s*Peratus\\s+Gaji\\s+Bersih.*?([\\d.]+)' },
+                    ],
+                };
+                
+                settings.value.api = {
+                    rateLimitPerMinute: getSetting('api', 'api.rate_limit_per_minute', 60),
+                    rateLimitPerHour: getSetting('api', 'api.rate_limit_per_hour', 1000),
+                    enableRateLimit: getSetting('api', 'api.enable_rate_limit', true),
+                    enableCors: getSetting('api', 'api.enable_cors', true),
+                    requireAuth: getSetting('api', 'api.require_auth', true),
+                    logRequests: getSetting('api', 'api.log_requests', true),
+                    webhookUrl: '',
+                    webhookSecret: '',
+                    enableWebhooks: false,
+                };
+                
+                settings.value.advanced = {
+                    cacheDuration: getSetting('advanced', 'advanced.cache_duration', 60),
+                    queueTimeout: getSetting('advanced', 'advanced.queue_timeout', 300),
+                    memoryLimit: getSetting('advanced', 'advanced.memory_limit', 512),
+                    enableDebugMode: getSetting('advanced', 'advanced.enable_debug_mode', false),
+                    enableProfiling: getSetting('advanced', 'advanced.enable_profiling', false),
+                    compressImages: getSetting('advanced', 'advanced.compress_images', true),
+                };
+                
+                console.log('Final settings state:', settings.value);
+                console.log('Allowed file types specifically:', settings.value.general.allowedFileTypes);
+                console.log('Type of allowedFileTypes:', typeof settings.value.general.allowedFileTypes);
+                console.log('Is array:', Array.isArray(settings.value.general.allowedFileTypes));
+                
+                // Force Vue reactivity update
+                await nextTick();
+            } else {
+                console.error('Invalid API response structure:', data);
+            }
+        } else {
+            const errorText = await response.text();
+            console.error('Settings API failed:', response.status, errorText);
+        }
+    } catch (e) {
+        console.error('Failed to fetch settings:', e);
     }
 };
 
 const saveSettings = async () => {
     isSaving.value = true;
     try {
-        await new Promise(resolve => setTimeout(resolve, 1000)); // Simulate API call
-        // Settings saved successfully
-        // Show success notification
-    } catch (e) {
+        // Prepare settings for API
+        const apiSettings = {
+            'general.system_name': settings.value.general.systemName,
+            'general.default_language': settings.value.general.defaultLanguage,
+            'general.enable_notifications': settings.value.general.enableNotifications,
+            'general.auto_cleanup': settings.value.general.autoCleanup,
+            'general.max_file_size': settings.value.general.maxFileSize,
+            'general.concurrent_processing': settings.value.general.concurrentProcessing,
+            'general.allowed_file_types': JSON.stringify(settings.value.general.allowedFileTypes),
+            'ocr.engine': settings.value.ocr.engine,
+            'ocr.dpi': settings.value.ocr.dpi,
+            'ocr.languages': settings.value.ocr.languages,
+            'ocr.preprocessing': settings.value.ocr.preprocessing,
+            'ocr.auto_rotate': settings.value.ocr.autoRotate,
+            'ocr.enhance_contrast': settings.value.ocr.enhanceContrast,
+            'ocr.confidence_threshold': settings.value.ocr.confidenceThreshold,
+            'api.rate_limit_per_minute': settings.value.api.rateLimitPerMinute,
+            'api.rate_limit_per_hour': settings.value.api.rateLimitPerHour,
+            'api.enable_rate_limit': settings.value.api.enableRateLimit,
+            'api.enable_cors': settings.value.api.enableCors,
+            'api.require_auth': settings.value.api.requireAuth,
+            'api.log_requests': settings.value.api.logRequests,
+            'advanced.cache_duration': settings.value.advanced.cacheDuration,
+            'advanced.queue_timeout': settings.value.advanced.queueTimeout,
+            'advanced.memory_limit': settings.value.advanced.memoryLimit,
+            'advanced.enable_debug_mode': settings.value.advanced.enableDebugMode,
+            'advanced.enable_profiling': settings.value.advanced.enableProfiling,
+            'advanced.compress_images': settings.value.advanced.compressImages,
+        };
+
+        const response = await fetch('/api/settings/', {
+            method: 'PUT',
+            headers: {
+                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '',
+                'Content-Type': 'application/json',
+                'Accept': 'application/json',
+            },
+            body: JSON.stringify({
+                settings: apiSettings
+            })
+        });
+
+        const data = await response.json();
         
+        if (data.success) {
+            // Show success message
+            console.log('Settings saved successfully');
+        } else {
+            throw new Error(data.message || 'Failed to save settings');
+        }
+    } catch (e) {
+        console.error('Failed to save settings:', e);
+        // Show error message
     }
     isSaving.value = false;
 };
@@ -625,30 +860,55 @@ const saveSettings = async () => {
 const resetToDefaults = async () => {
     isResetting.value = true;
     try {
-        await new Promise(resolve => setTimeout(resolve, 1000)); // Simulate reset
-        // Reset to default values
-        location.reload(); // Simple reset for demo
-    } catch (e) {
+        const response = await fetch('/api/settings/reset-all', {
+            method: 'POST',
+            headers: {
+                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '',
+                'Content-Type': 'application/json',
+                'Accept': 'application/json',
+            }
+        });
+
+        const data = await response.json();
         
+        if (data.success) {
+            // Reload settings from API
+            await fetchSettings();
+            console.log('Settings reset to defaults');
+        } else {
+            throw new Error(data.message || 'Failed to reset settings');
+        }
+    } catch (e) {
+        console.error('Failed to reset settings:', e);
     }
     isResetting.value = false;
 };
 
-const toggleFileType = (type: string) => {
-    const index = settings.value.general.allowedFileTypes.indexOf(type);
-    if (index > -1) {
-        settings.value.general.allowedFileTypes.splice(index, 1);
-    } else {
-        settings.value.general.allowedFileTypes.push(type);
+const toggleFileType = (type: string, checked: boolean) => {
+    console.log(`toggleFileType called: type=${type}, checked=${checked}`);
+    console.log('Current allowedFileTypes before change:', settings.value.general.allowedFileTypes);
+    
+    // Create a new array to ensure Vue detects the change
+    const currentTypes = [...settings.value.general.allowedFileTypes];
+    
+    if (checked && !currentTypes.includes(type)) {
+        currentTypes.push(type);
+    } else if (!checked && currentTypes.includes(type)) {
+        const index = currentTypes.indexOf(type);
+        currentTypes.splice(index, 1);
     }
+    
+    // Assign the new array to trigger reactivity
+    settings.value.general.allowedFileTypes = currentTypes;
+    console.log('Updated allowed file types:', settings.value.general.allowedFileTypes);
 };
 
-const toggleLanguage = (langCode: string) => {
-    const index = settings.value.ocr.languages.indexOf(langCode);
-    if (index > -1) {
-        settings.value.ocr.languages.splice(index, 1);
-    } else {
+const toggleLanguage = (langCode: string, checked: boolean) => {
+    if (checked && !settings.value.ocr.languages.includes(langCode)) {
         settings.value.ocr.languages.push(langCode);
+    } else if (!checked && settings.value.ocr.languages.includes(langCode)) {
+        const index = settings.value.ocr.languages.indexOf(langCode);
+        settings.value.ocr.languages.splice(index, 1);
     }
 };
 

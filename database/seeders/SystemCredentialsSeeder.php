@@ -26,40 +26,40 @@ class SystemCredentialsSeeder extends Seeder
         $systemUsers = [
             [
                 'name' => 'System Administrator',
-                'email' => 'admin@payslip-ai.local',
-                'password' => Hash::make('PayslipAI@2025!'),
+                'email' => 'admin@test.com',
+                'password' => Hash::make('Password123'),
                 'role_id' => $superAdminRole?->id,
                 'is_active' => true,
                 'email_verified_at' => now(),
             ],
             [
                 'name' => 'System Manager',
-                'email' => 'manager@payslip-ai.local',
-                'password' => Hash::make('Manager@2025!'),
+                'email' => 'manager@test.com',
+                'password' => Hash::make('Password123'),
                 'role_id' => $adminRole?->id,
                 'is_active' => true,
                 'email_verified_at' => now(),
             ],
             [
                 'name' => 'Operations Manager',
-                'email' => 'operations@payslip-ai.local',
-                'password' => Hash::make('Operations@2025!'),
+                'email' => 'operations@test.com',
+                'password' => Hash::make('Password123'),
                 'role_id' => $managerRole?->id,
                 'is_active' => true,
                 'email_verified_at' => now(),
             ],
             [
                 'name' => 'System Operator',
-                'email' => 'operator@payslip-ai.local',
-                'password' => Hash::make('Operator@2025!'),
+                'email' => 'operator@test.com',
+                'password' => Hash::make('Password123'),
                 'role_id' => $operatorRole?->id,
                 'is_active' => true,
                 'email_verified_at' => now(),
             ],
             [
                 'name' => 'Demo User',
-                'email' => 'demo@payslip-ai.local',
-                'password' => Hash::make('Demo@2025!'),
+                'email' => 'demo@test.com',
+                'password' => Hash::make('Password123'),
                 'role_id' => $userRole?->id,
                 'is_active' => true,
                 'email_verified_at' => now(),
@@ -93,11 +93,11 @@ class SystemCredentialsSeeder extends Seeder
         // Display credentials information
         $this->command->info('');
         $this->command->info('=== SYSTEM CREDENTIALS ===');
-        $this->command->info('Super Admin: admin@payslip-ai.local / PayslipAI@2025!');
-        $this->command->info('Admin: manager@payslip-ai.local / Manager@2025!');
-        $this->command->info('Manager: operations@payslip-ai.local / Operations@2025!');
-        $this->command->info('Operator: operator@payslip-ai.local / Operator@2025!');
-        $this->command->info('Demo User: demo@payslip-ai.local / Demo@2025!');
+        $this->command->info('Super Admin: admin@test.com / Password123');
+        $this->command->info('Admin: manager@test.com / Password123');
+        $this->command->info('Manager: operations@test.com / Password123');
+        $this->command->info('Operator: operator@test.com / Password123');
+        $this->command->info('Demo User: demo@test.com / Password123');
         $this->command->info('Test User: test@example.com / password');
         $this->command->info('');
         $this->command->warn('⚠️  IMPORTANT: Change these default passwords in production!');

@@ -5,6 +5,7 @@ namespace App\Jobs;
 use App\Models\Koperasi;
 use App\Models\Payslip;
 use App\Services\TelegramBotService;
+use App\Services\SettingsService;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -20,11 +21,18 @@ class ProcessPayslip implements ShouldQueue
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
     /**
+     * The number of seconds the job can run before timing out.
+     */
+    public int $timeout;
+
+    /**
      * Create a new job instance.
      */
     public function __construct(public Payslip $payslip)
     {
-        //
+        // Get timeout from settings
+        $settingsService = app(SettingsService::class);
+        $this->timeout = $settingsService->get('advanced.queue_timeout', 300);
     }
 
     /**
@@ -32,6 +40,24 @@ class ProcessPayslip implements ShouldQueue
      */
     public function handle(): void
     {
+        // Get settings service
+        $settingsService = app(SettingsService::class);
+        
+        // Set memory limit from settings
+        $memoryLimit = $settingsService->get('advanced.memory_limit', 512);
+        ini_set('memory_limit', $memoryLimit . 'M');
+        
+        // Enable debug mode if configured
+        $debugMode = $settingsService->get('advanced.enable_debug_mode', false);
+        if ($debugMode) {
+            Log::info('Processing payslip in debug mode', [
+                'payslip_id' => $this->payslip->id,
+                'memory_limit' => $memoryLimit . 'M',
+                'timeout' => $this->timeout,
+                'user_id' => $this->payslip->user_id,
+            ]);
+        }
+
         $this->payslip->update([
             'status' => 'processing',
             'processing_started_at' => now(),
@@ -41,6 +67,15 @@ class ProcessPayslip implements ShouldQueue
             $path = Storage::path($this->payslip->file_path);
             $mime = Storage::mimeType($this->payslip->file_path);
             $text = '';
+
+            if ($debugMode) {
+                Log::info('Starting OCR processing', [
+                    'payslip_id' => $this->payslip->id,
+                    'file_path' => $path,
+                    'mime_type' => $mime,
+                    'file_size' => Storage::size($this->payslip->file_path),
+                ]);
+            }
 
             if ($mime === 'application/pdf') {
                 $text = (new Pdf(env('PDFTOTEXT_PATH')))->setPdf($path)->text();
@@ -52,11 +87,19 @@ class ProcessPayslip implements ShouldQueue
             }
 
             // Log extracted text for debugging
-            Log::info('Extracted OCR text for payslip ' . $this->payslip->id, [
-                'text_length' => strlen($text),
-                'text_preview' => substr($text, 0, 500),
-                'full_text' => $text
-            ]);
+            if ($debugMode) {
+                Log::info('OCR extraction completed', [
+                    'payslip_id' => $this->payslip->id,
+                    'text_length' => strlen($text),
+                    'processing_time' => now()->diffInSeconds($this->payslip->processing_started_at),
+                ]);
+            } else {
+                Log::info('Extracted OCR text for payslip ' . $this->payslip->id, [
+                    'text_length' => strlen($text),
+                    'text_preview' => substr($text, 0, 500),
+                    'full_text' => $text
+                ]);
+            }
 
             $extractedData = $this->extractPayslipData($text);
 
@@ -105,6 +148,9 @@ class ProcessPayslip implements ShouldQueue
 
             // Send result to Telegram if this payslip came from Telegram
             $this->sendTelegramNotification($detailedKoperasiResults);
+            
+            // Send result to WhatsApp if this payslip came from WhatsApp
+            $this->sendWhatsAppNotification($detailedKoperasiResults);
 
             // Update batch progress if this payslip is part of a batch
             if ($this->payslip->batch_id) {
@@ -129,6 +175,9 @@ class ProcessPayslip implements ShouldQueue
 
             // Send failure notification to Telegram if this payslip came from Telegram
             $this->sendTelegramNotification([]);
+            
+            // Send failure notification to WhatsApp if this payslip came from WhatsApp
+            $this->sendWhatsAppNotification([]);
 
             // Update batch progress if this payslip is part of a batch
             if ($this->payslip->batch_id) {
@@ -582,6 +631,45 @@ class ProcessPayslip implements ShouldQueue
 
         } catch (\Exception $e) {
             Log::error("Failed to send Telegram notification for payslip {$this->payslip->id}: " . $e->getMessage());
+        }
+    }
+
+    /**
+     * Send WhatsApp notification with results
+     */
+    private function sendWhatsAppNotification(array $detailedKoperasiResults): void
+    {
+        // Only send notification if payslip came from WhatsApp
+        if ($this->payslip->source !== 'whatsapp' || !$this->payslip->whatsapp_phone) {
+            return;
+        }
+
+        // Check if WhatsApp bot is configured
+        $accessToken = config('services.whatsapp.access_token');
+        if (!$accessToken) {
+            Log::warning("Skipping WhatsApp notification for payslip {$this->payslip->id}: Access token not configured");
+            return;
+        }
+
+        try {
+            $whatsappService = new \App\Services\WhatsAppBotService();
+            
+            // Format eligibility results for WhatsApp
+            $eligibilityResults = [];
+            foreach ($detailedKoperasiResults as $koperasiName => $result) {
+                $eligibilityResults[] = [
+                    'koperasi_name' => $koperasiName,
+                    'eligible' => $result['eligible'],
+                    'reasons' => $result['reasons']
+                ];
+            }
+
+            $whatsappService->sendProcessingResult($this->payslip, $eligibilityResults);
+            
+            Log::info("Sent WhatsApp notification for payslip {$this->payslip->id} to phone {$this->payslip->whatsapp_phone}");
+
+        } catch (\Exception $e) {
+            Log::error("Failed to send WhatsApp notification for payslip {$this->payslip->id}: " . $e->getMessage());
         }
     }
 }

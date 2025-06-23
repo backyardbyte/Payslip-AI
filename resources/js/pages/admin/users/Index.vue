@@ -380,15 +380,51 @@ const editUser = (user: User) => {
     showEditModal.value = true
 }
 
-const toggleUserStatus = (user: User) => {
-    // TODO: Implement toggle user status
-    console.log('Toggle status for user:', user)
+const toggleUserStatus = async (user: User) => {
+    try {
+        const response = await fetch(`/api/admin/users/${user.id}/toggle-status`, {
+            method: 'POST',
+            headers: {
+                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '',
+                'Content-Type': 'application/json',
+                'Accept': 'application/json',
+            }
+        });
+
+        const data = await response.json();
+        
+        if (data.success) {
+            // Update user status in the local data
+            const userIndex = props.users.findIndex(u => u.id === user.id);
+            if (userIndex !== -1) {
+                props.users[userIndex].is_active = data.is_active;
+            }
+            console.log(data.message);
+        } else {
+            console.error('Failed to toggle user status:', data.message);
+        }
+    } catch (error) {
+        console.error('Error toggling user status:', error);
+    }
 }
 
-const deleteUser = (user: User) => {
-    // TODO: Implement delete user functionality
-    if (confirm(`Are you sure you want to delete ${user.name}?`)) {
-        console.log('Delete user:', user)
+const deleteUser = async (user: User) => {
+    if (!confirm(`Are you sure you want to delete ${user.name}? This action cannot be undone.`)) {
+        return;
+    }
+
+    try {
+        await router.delete(`/admin/users/${user.id}`, {
+            preserveScroll: true,
+            onSuccess: () => {
+                console.log('User deleted successfully');
+            },
+            onError: (errors) => {
+                console.error('Error deleting user:', errors);
+            }
+        });
+    } catch (error) {
+        console.error('Error deleting user:', error);
     }
 }
 

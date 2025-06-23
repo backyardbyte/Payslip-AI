@@ -6,9 +6,17 @@ use Illuminate\Foundation\Inspiring;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
 use Tighten\Ziggy\Ziggy;
+use App\Services\SettingsService;
 
 class HandleInertiaRequests extends Middleware
 {
+    protected SettingsService $settingsService;
+
+    public function __construct(SettingsService $settingsService)
+    {
+        $this->settingsService = $settingsService;
+    }
+
     /**
      * The root template that's loaded on the first page visit.
      *
@@ -39,9 +47,11 @@ class HandleInertiaRequests extends Middleware
     {
         [$message, $author] = str(Inspiring::quotes()->random())->explode('-');
 
+        $systemName = $this->settingsService->get('general.system_name', config('app.name', 'Payslip AI'));
+
         return [
             ...parent::share($request),
-            'name' => config('app.name'),
+            'name' => $systemName,
             'quote' => ['message' => trim($message), 'author' => trim($author)],
             'auth' => [
                 'user' => $request->user() ? [

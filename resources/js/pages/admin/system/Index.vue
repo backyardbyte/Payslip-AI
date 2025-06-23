@@ -285,13 +285,26 @@ const clearCache = async (type: string) => {
     isLoading[loadingKey] = true
     
     try {
-        // TODO: Implement cache clearing API call
-        console.log(`Clearing ${type} cache...`)
-        await new Promise(resolve => setTimeout(resolve, 1000)) // Simulate API call
-        alert(`${type} cache cleared successfully!`)
+        const response = await fetch('/api/system/clear-cache', {
+            method: 'POST',
+            headers: {
+                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '',
+                'Content-Type': 'application/json',
+                'Accept': 'application/json',
+            },
+            body: JSON.stringify({ type })
+        });
+
+        const data = await response.json();
+        
+        if (data.success) {
+            alert(data.message);
+        } else {
+            throw new Error(data.message || 'Failed to clear cache');
+        }
     } catch (error) {
-        console.error('Error clearing cache:', error)
-        alert('Error clearing cache')
+        console.error('Error clearing cache:', error);
+        alert('Error clearing cache: ' + (error instanceof Error ? error.message : 'Unknown error'));
     } finally {
         isLoading[loadingKey] = false
     }
@@ -301,13 +314,25 @@ const optimizeDatabase = async () => {
     isLoading.optimizeDb = true
     
     try {
-        // TODO: Implement database optimization API call
-        console.log('Optimizing database...')
-        await new Promise(resolve => setTimeout(resolve, 2000)) // Simulate API call
-        alert('Database optimized successfully!')
+        const response = await fetch('/api/system/optimize-database', {
+            method: 'POST',
+            headers: {
+                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '',
+                'Content-Type': 'application/json',
+                'Accept': 'application/json',
+            }
+        });
+
+        const data = await response.json();
+        
+        if (data.success) {
+            alert(`${data.message}\nOptimized ${data.total_tables} tables successfully!`);
+        } else {
+            throw new Error(data.message || 'Failed to optimize database');
+        }
     } catch (error) {
-        console.error('Error optimizing database:', error)
-        alert('Error optimizing database')
+        console.error('Error optimizing database:', error);
+        alert('Error optimizing database: ' + (error instanceof Error ? error.message : 'Unknown error'));
     } finally {
         isLoading.optimizeDb = false
     }
@@ -317,13 +342,25 @@ const createBackup = async () => {
     isLoading.backup = true
     
     try {
-        // TODO: Implement backup creation API call
-        console.log('Creating backup...')
-        await new Promise(resolve => setTimeout(resolve, 3000)) // Simulate API call
-        alert('Backup created successfully!')
+        const response = await fetch('/api/system/create-backup', {
+            method: 'POST',
+            headers: {
+                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '',
+                'Content-Type': 'application/json',
+                'Accept': 'application/json',
+            }
+        });
+
+        const data = await response.json();
+        
+        if (data.success) {
+            alert(`${data.message}\nBackup file: ${data.backup_file}\nSize: ${data.file_size_mb} MB`);
+        } else {
+            throw new Error(data.message || 'Failed to create backup');
+        }
     } catch (error) {
-        console.error('Error creating backup:', error)
-        alert('Error creating backup')
+        console.error('Error creating backup:', error);
+        alert('Error creating backup: ' + (error instanceof Error ? error.message : 'Unknown error'));
     } finally {
         isLoading.backup = false
     }
@@ -334,13 +371,35 @@ const cleanup = async (type: string) => {
     isLoading[loadingKey] = true
     
     try {
-        // TODO: Implement cleanup API call
-        console.log(`Cleaning up ${type}...`)
-        await new Promise(resolve => setTimeout(resolve, 1500)) // Simulate API call
-        alert(`${type} cleanup completed successfully!`)
+        const response = await fetch('/api/system/cleanup', {
+            method: 'POST',
+            headers: {
+                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '',
+                'Content-Type': 'application/json',
+                'Accept': 'application/json',
+            },
+            body: JSON.stringify({ type, days: 30 })
+        });
+
+        const data = await response.json();
+        
+        if (data.success) {
+            const results = data.results;
+            let message = data.message;
+            
+            if (typeof results === 'object' && results.total_deleted_count !== undefined) {
+                message += `\nDeleted ${results.total_deleted_count} items\nFreed ${results.total_freed_space_mb} MB`;
+            } else if (results.deleted_count !== undefined) {
+                message += `\nDeleted ${results.deleted_count} items\nFreed ${Math.round(results.freed_space / 1024 / 1024)} MB`;
+            }
+            
+            alert(message);
+        } else {
+            throw new Error(data.message || `Failed to cleanup ${type}`);
+        }
     } catch (error) {
-        console.error(`Error cleaning up ${type}:`, error)
-        alert(`Error cleaning up ${type}`)
+        console.error(`Error cleaning up ${type}:`, error);
+        alert(`Error cleaning up ${type}: ` + (error instanceof Error ? error.message : 'Unknown error'));
     } finally {
         isLoading[loadingKey] = false
     }
@@ -350,18 +409,28 @@ const refreshQueueStats = async () => {
     isLoading.queueStats = true
     
     try {
-        // TODO: Implement queue stats API call
-        console.log('Refreshing queue stats...')
-        await new Promise(resolve => setTimeout(resolve, 500)) // Simulate API call
+        const response = await fetch('/api/system/queue-stats', {
+            headers: {
+                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '',
+                'Content-Type': 'application/json',
+                'Accept': 'application/json',
+            }
+        });
+
+        const data = await response.json();
         
-        // Simulate updated stats
-        queueStats.value = {
-            pending: Math.floor(Math.random() * 10),
-            processing: Math.floor(Math.random() * 5),
-            failed: Math.floor(Math.random() * 3),
+        if (data.success) {
+            queueStats.value = {
+                pending: data.data.pending || 0,
+                processing: data.data.processing || 0,
+                failed: data.data.failed || 0,
+            };
+        } else {
+            throw new Error(data.message || 'Failed to get queue stats');
         }
     } catch (error) {
-        console.error('Error refreshing queue stats:', error)
+        console.error('Error refreshing queue stats:', error);
+        // Don't show alert for this as it's not critical and runs automatically
     } finally {
         isLoading.queueStats = false
     }

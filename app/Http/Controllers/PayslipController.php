@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Jobs\ProcessPayslip;
 use App\Models\Payslip;
+use App\Services\SettingsService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Storage;
@@ -11,8 +12,11 @@ use Illuminate\Support\Facades\DB;
 
 class PayslipController extends Controller
 {
-    public function __construct()
+    protected SettingsService $settingsService;
+
+    public function __construct(SettingsService $settingsService)
     {
+        $this->settingsService = $settingsService;
         $this->middleware('permission:payslip.view')->only(['index', 'show', 'queue', 'status']);
         $this->middleware('permission:payslip.create')->only(['upload']);
         $this->middleware('permission:payslip.delete')->only(['destroy', 'clearAll', 'clearCompleted', 'clearQueue']);
@@ -130,37 +134,56 @@ class PayslipController extends Controller
                 'files' => $request->allFiles(),
             ]);
 
-            $request->validate([
+            // Get max file size from settings (in MB)
+            $maxFileSizeMB = $this->settingsService->get('general.max_file_size', 5);
+            $maxFileSizeKB = $maxFileSizeMB * 1024; // Convert to KB for validation
+            $maxFileSizeBytes = $maxFileSizeMB * 1024 * 1024; // Convert to bytes for additional check
+
+            // Get allowed file types from settings
+            $allowedFileTypes = $this->settingsService->get('general.allowed_file_types', ['pdf', 'png', 'jpg', 'jpeg']);
+            $allowedMimeTypes = [
+                'pdf' => 'application/pdf',
+                'png' => 'image/png', 
+                'jpg' => 'image/jpeg',
+                'jpeg' => 'image/jpeg'
+            ];
+            
+            $validationRules = [
                 'file' => [
                     'required', 
                     'file', 
-                    'mimes:pdf,png,jpg,jpeg', 
-                    'max:5120',
-                    // Removed dimensions validation as it was too restrictive for payslip images
+                    'mimes:' . implode(',', $allowedFileTypes), 
+                    'max:' . $maxFileSizeKB,
                 ],
-            ]);
+            ];
+
+            $request->validate($validationRules);
 
             \Log::info('Validation passed');
 
             // Additional security checks
             $file = $request->file('file');
-            $allowedMimeTypes = ['application/pdf', 'image/png', 'image/jpeg', 'image/jpg'];
+            $allowedMimeTypesArray = array_values(array_intersect_key($allowedMimeTypes, array_flip($allowedFileTypes)));
             
             \Log::info('File details', [
                 'name' => $file->getClientOriginalName(),
                 'mime' => $file->getMimeType(),
                 'size' => $file->getSize(),
+                'max_allowed_size' => $maxFileSizeBytes,
             ]);
             
-            if (!in_array($file->getMimeType(), $allowedMimeTypes)) {
+            if (!in_array($file->getMimeType(), $allowedMimeTypesArray)) {
                 \Log::error('Invalid file type', ['mime' => $file->getMimeType()]);
                 abort(422, 'Invalid file type detected.');
             }
 
-            // Check file size again (double validation)
-            if ($file->getSize() > 5242880) { // 5MB in bytes
-                \Log::error('File too large', ['size' => $file->getSize()]);
-                abort(422, 'File size exceeds maximum allowed size.');
+            // Check file size again with settings value
+            if ($file->getSize() > $maxFileSizeBytes) {
+                \Log::error('File too large', [
+                    'size' => $file->getSize(),
+                    'max_allowed' => $maxFileSizeBytes
+                ]);
+                abort(422, "File size exceeds maximum allowed size of {$maxFileSizeMB}MB.");
             }
 
             $path = $request->file('file')->store('payslips');

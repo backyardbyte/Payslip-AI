@@ -31,6 +31,8 @@ class User extends Authenticatable
         'avatar',
         'telegram_user_id',
         'telegram_username',
+        'whatsapp_phone',
+        'whatsapp_name',
     ];
 
     /**
