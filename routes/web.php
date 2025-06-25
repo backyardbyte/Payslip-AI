@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\KoperasiController;
+use App\Http\Controllers\HealthController;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
 
@@ -45,6 +46,10 @@ Route::get('analytics', function () {
         ],
     ]);
 })->middleware(['auth', 'verified', 'permission:analytics.view'])->name('analytics');
+
+// Health check endpoints for monitoring
+Route::get('/health', [HealthController::class, 'check'])->name('health.check');
+Route::get('/health/status', [HealthController::class, 'status'])->name('health.status');
 
 require __DIR__.'/settings.php';
 require __DIR__.'/auth.php';
