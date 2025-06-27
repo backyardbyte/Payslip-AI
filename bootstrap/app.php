@@ -38,6 +38,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'permission' => CheckPermission::class,
             'role' => CheckRole::class,
             'api.token' => \App\Http\Middleware\ApiTokenAuth::class,
+            'api.rate_limit' => \App\Http\Middleware\ApiRateLimitMiddleware::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions) {
