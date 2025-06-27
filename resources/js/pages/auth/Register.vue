@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import AuthBase from '@/layouts/AuthLayout.vue';
 import { Head, useForm } from '@inertiajs/vue3';
-import { LoaderCircle } from 'lucide-vue-next';
+import { LoaderCircle, ArrowLeft } from 'lucide-vue-next';
 
 const form = useForm({
     name: '',
@@ -23,8 +23,15 @@ const submit = () => {
 </script>
 
 <template>
-    <AuthBase title="Create an account" description="Enter your details below to create your account">
+    <AuthBase class="w-md mx-auto" title="Create an account" description="Enter your details below to create your account">
         <Head title="Register" />
+
+        <div class="mb-4">
+            <TextLink :href="route('home')" class="inline-flex items-center text-sm text-muted-foreground hover:text-foreground transition-colors">
+                <ArrowLeft class="h-4 w-4 mr-2" />
+                Back to Home
+            </TextLink>
+        </div>
 
         <form @submit.prevent="submit" class="flex flex-col gap-6">
             <div class="grid gap-6">
