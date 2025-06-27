@@ -121,16 +121,10 @@ class ProcessPayslip implements ShouldQueue
                             'payslip_id' => $this->payslip->id
                         ]);
                     }
-                    $text = (new TesseractOCR($path))
-                        ->lang('eng+msa')
-                        ->configFile('bazaar')
-                        ->run();
+                    $text = $this->performOCR($path);
                 }
             } else {
-                $text = (new TesseractOCR($path))
-                    ->lang('eng+msa') // Add Malay language support
-                    ->configFile('bazaar') // Better for mixed text
-                    ->run();
+                $text = $this->performOCR($path);
             }
 
             // Log extracted text for debugging
@@ -585,6 +579,144 @@ class ProcessPayslip implements ShouldQueue
         }
 
         return $data;
+    }
+
+    /**
+     * Perform OCR using available method (OCR.space or Tesseract)
+     */
+    private function performOCR(string $filePath): string
+    {
+        $settingsService = app(SettingsService::class);
+        $ocrMethod = env('OCR_METHOD', 'tesseract'); // tesseract or ocrspace
+        $debugMode = $settingsService->get('advanced.enable_debug_mode', false);
+        
+        if ($ocrMethod === 'ocrspace') {
+            return $this->performOCRSpace($filePath);
+        } else {
+            return $this->performTesseractOCR($filePath);
+        }
+    }
+    
+    /**
+     * Perform OCR using OCR.space API
+     */
+    private function performOCRSpace(string $filePath): string
+    {
+        $apiKey = env('OCRSPACE_API_KEY');
+        if (!$apiKey) {
+            throw new \Exception('OCR.space API key not configured');
+        }
+        
+        $settingsService = app(SettingsService::class);
+        $debugMode = $settingsService->get('advanced.enable_debug_mode', false);
+        
+        try {
+            // Read file and encode to base64
+            $fileData = file_get_contents($filePath);
+            $base64 = base64_encode($fileData);
+            
+            // Determine file type
+            $mimeType = mime_content_type($filePath);
+            
+            // Prepare OCR.space API request
+            $postData = [
+                'apikey' => $apiKey,
+                'base64Image' => 'data:' . $mimeType . ';base64,' . $base64,
+                'language' => 'eng,msa', // English and Malay
+                'isOverlayRequired' => false,
+                'detectOrientation' => true,
+                'scale' => true,
+                'OCREngine' => 2, // OCR Engine 2 is better for mixed languages
+                'isTable' => true, // Better for structured documents like payslips
+            ];
+            
+            if ($debugMode) {
+                Log::info('Making OCR.space API request', [
+                    'payslip_id' => $this->payslip->id,
+                    'file_size' => strlen($fileData),
+                    'mime_type' => $mimeType
+                ]);
+            }
+            
+            // Make API request
+            $ch = curl_init();
+            curl_setopt($ch, CURLOPT_URL, 'https://api.ocr.space/parse/image');
+            curl_setopt($ch, CURLOPT_POST, true);
+            curl_setopt($ch, CURLOPT_POSTFIELDS, $postData);
+            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+            curl_setopt($ch, CURLOPT_TIMEOUT, 120); // 2 minutes timeout
+            curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+            
+            $response = curl_exec($ch);
+            $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            $curlError = curl_error($ch);
+            curl_close($ch);
+            
+            if ($curlError) {
+                throw new \Exception('OCR.space API request failed: ' . $curlError);
+            }
+            
+            if ($httpCode !== 200) {
+                throw new \Exception('OCR.space API returned HTTP ' . $httpCode);
+            }
+            
+            $result = json_decode($response, true);
+            
+            if (!$result || !isset($result['ParsedResults'])) {
+                throw new \Exception('Invalid OCR.space API response');
+            }
+            
+            if (isset($result['ErrorMessage']) && !empty($result['ErrorMessage'])) {
+                throw new \Exception('OCR.space API error: ' . implode(', ', $result['ErrorMessage']));
+            }
+            
+            // Extract text from all parsed results
+            $extractedText = '';
+            foreach ($result['ParsedResults'] as $parsedResult) {
+                if (isset($parsedResult['ParsedText'])) {
+                    $extractedText .= $parsedResult['ParsedText'] . "\n";
+                }
+            }
+            
+            if ($debugMode) {
+                Log::info('OCR.space extraction completed', [
+                    'payslip_id' => $this->payslip->id,
+                    'text_length' => strlen($extractedText),
+                    'file_parse_status' => $result['ParsedResults'][0]['FileParseExitCode'] ?? 'unknown'
+                ]);
+            }
+            
+            return trim($extractedText);
+            
+        } catch (\Exception $e) {
+            Log::error('OCR.space processing failed for payslip ' . $this->payslip->id, [
+                'error' => $e->getMessage(),
+                'file_path' => $filePath
+            ]);
+            
+            // Fall back to Tesseract if available
+            if (class_exists('thiagoalessio\TesseractOCR\TesseractOCR')) {
+                Log::info('Falling back to Tesseract OCR for payslip ' . $this->payslip->id);
+                return $this->performTesseractOCR($filePath);
+            }
+            
+            throw $e;
+        }
+    }
+    
+    /**
+     * Perform OCR using local Tesseract
+     */
+    private function performTesseractOCR(string $filePath): string
+    {
+        if (!class_exists('thiagoalessio\TesseractOCR\TesseractOCR')) {
+            throw new \Exception('Tesseract OCR not available and OCR.space not configured');
+        }
+        
+        return (new TesseractOCR($filePath))
+            ->lang('eng+msa') // English and Malay language support
+            ->configFile('bazaar') // Better for mixed text
+            ->run();
     }
 
     private function checkEligibility(float $peratusGajiBersih, array $rules, array $extractedData): array
