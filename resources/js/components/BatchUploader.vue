@@ -1,70 +1,58 @@
 <template>
-    <Card>
-        <CardHeader>
-            <CardTitle class="flex items-center gap-2">
-                <Package class="h-5 w-5" />
-                Batch Uploader
-            </CardTitle>
-            <CardDescription>Upload multiple payslips for batch processing with advanced options.</CardDescription>
+    <Card class="overflow-hidden border-2 border-dashed border-primary/20 hover:border-primary/40 transition-all duration-300">
+        <CardHeader class="bg-gradient-to-r from-blue-50 to-purple-50 dark:from-blue-950/50 dark:to-purple-950/50">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center space-x-3">
+                    <div class="p-3 bg-primary/10 rounded-full">
+                        <Package class="h-6 w-6 text-primary" />
+                    </div>
+                    <div>
+                        <CardTitle class="text-xl">Enhanced Batch Upload</CardTitle>
+                        <CardDescription class="text-base">
+                            Upload multiple payslips simultaneously for efficient AI processing
+                        </CardDescription>
+                    </div>
+                </div>
+                <div class="text-right">
+                    <div class="text-2xl font-bold text-primary">{{ files.length }}</div>
+                    <div class="text-sm text-muted-foreground">files selected</div>
+                </div>
+            </div>
         </CardHeader>
         <CardContent class="space-y-6">
             <!-- Batch Settings -->
-            <Collapsible v-model:open="showSettings">
-                <CollapsibleTrigger asChild>
-                    <Button variant="outline" class="w-full justify-between">
-                        <span class="flex items-center gap-2">
-                            <Settings class="h-4 w-4" />
-                            Batch Processing Settings
-                        </span>
-                        <ChevronDown class="h-4 w-4" />
-                    </Button>
-                </CollapsibleTrigger>
-                <CollapsibleContent class="space-y-4 mt-4 p-4 border rounded-lg bg-muted/50">
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div>
-                            <Label for="batch-name">Batch Name</Label>
-                            <input
-                                id="batch-name"
-                                v-model="batchSettings.name"
-                                type="text"
-                                placeholder="Enter batch name (optional)"
-                                class="w-full mt-1 px-3 py-2 border border-input rounded-md bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-                            />
-                        </div>
-                        <div>
-                            <Label for="priority">Processing Priority</Label>
-                            <select
-                                id="priority"
-                                v-model="batchSettings.priority"
-                                class="w-full mt-1 px-3 py-2 border border-input rounded-md bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-                            >
-                                <option value="low">Low Priority</option>
-                                <option value="normal">Normal Priority</option>
-                                <option value="high">High Priority</option>
-                            </select>
-                        </div>
-                        <div>
-                            <Label for="max-concurrent">Max Concurrent Processing</Label>
-                            <input
-                                id="max-concurrent"
-                                v-model.number="batchSettings.maxConcurrent"
-                                type="number"
-                                min="1"
-                                max="10"
-                                class="w-full mt-1 px-3 py-2 border border-input rounded-md bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-                            />
-                        </div>
-                        <div class="flex items-center space-x-2">
-                            <Checkbox
-                                id="parallel-processing"
-                                :checked="batchSettings.parallelProcessing"
-                                @update:checked="batchSettings.parallelProcessing = $event"
-                            />
-                            <Label for="parallel-processing">Enable Parallel Processing</Label>
-                        </div>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 p-4 bg-muted/30 rounded-lg">
+                <div class="space-y-2">
+                    <Label class="text-sm font-medium">Batch Name</Label>
+                    <Input 
+                        v-model="batchSettings.name" 
+                        placeholder="Enter batch name"
+                        class="text-sm"
+                    />
+                </div>
+                <div class="space-y-2">
+                    <Label class="text-sm font-medium">Processing Priority</Label>
+                    <select
+                        v-model="batchSettings.priority"
+                        class="w-full px-3 py-2 border border-input rounded-md bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                    >
+                        <option value="low">🔵 Low Priority</option>
+                        <option value="normal">🟢 Normal Priority</option>
+                        <option value="high">🟠 High Priority</option>
+                    </select>
+                </div>
+                <div class="space-y-2">
+                    <Label class="text-sm font-medium">Auto-process</Label>
+                    <div class="flex items-center space-x-2">
+                        <Checkbox 
+                            id="auto-process"
+                            :checked="batchSettings.parallelProcessing"
+                            @update:checked="batchSettings.parallelProcessing = $event"
+                        />
+                        <Label for="auto-process" class="text-sm">Start processing immediately</Label>
                     </div>
-                </CollapsibleContent>
-            </Collapsible>
+                </div>
+            </div>
 
             <!-- File Drop Zone -->
             <div
@@ -219,12 +207,13 @@
 import { ref, onUnmounted } from 'vue'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Badge } from '@/components/ui/badge'
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
+
 import {
-    Package, Settings, ChevronDown, FileText, LoaderCircle, XCircle, CheckCircle,
+    Package, FileText, LoaderCircle, XCircle, CheckCircle,
     X, Trash2, RotateCcw
 } from 'lucide-vue-next'
 
@@ -251,7 +240,6 @@ const emit = defineEmits<{
 const files = ref<BatchFile[]>([])
 const isDragging = ref(false)
 const isUploading = ref(false)
-const showSettings = ref(false)
 const fileInput = ref<HTMLInputElement | null>(null)
 
 const batchSettings = ref<BatchSettings>({

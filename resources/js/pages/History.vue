@@ -558,10 +558,13 @@ const fetchHistory = async () => {
             }
         });
         if (response.ok) {
-            history.value = await response.json();
+            const data = await response.json();
+            // Handle both old and new API response formats
+            history.value = Array.isArray(data) ? data : (data.payslips || data.data || []);
         }
     } catch (e) {
-        // Handle error silently or show user notification
+        console.error('Failed to fetch history:', e);
+        history.value = []; // Ensure history is always an array
     }
     isLoading.value = false;
 };

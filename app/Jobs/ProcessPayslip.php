@@ -6,6 +6,7 @@ use App\Models\Koperasi;
 use App\Models\Payslip;
 use App\Services\TelegramBotService;
 use App\Services\SettingsService;
+use App\Services\PayslipProcessingService;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -42,101 +43,64 @@ class ProcessPayslip implements ShouldQueue
     {
         // Get settings service
         $settingsService = app(SettingsService::class);
+        $processingService = app(PayslipProcessingService::class);
         
         // Set memory limit from settings
         $memoryLimit = $settingsService->get('advanced.memory_limit', 512);
         ini_set('memory_limit', $memoryLimit . 'M');
         
-        // Enable debug mode if configured
-        $debugMode = $settingsService->get('advanced.enable_debug_mode', false);
-        if ($debugMode) {
-            Log::info('Processing payslip in debug mode', [
-                'payslip_id' => $this->payslip->id,
-                'memory_limit' => $memoryLimit . 'M',
-                'timeout' => $this->timeout,
-                'user_id' => $this->payslip->user_id,
-            ]);
-        }
-
-        $this->payslip->update([
-            'status' => 'processing',
-            'processing_started_at' => now(),
-        ]);
-
         try {
+            // Use the enhanced processing service
+            $result = $processingService->processPayslip($this->payslip);
+            
+            // Send notifications with enhanced data
+            $this->sendTelegramNotification($result['detailed_koperasi_results']);
+            $this->sendWhatsAppNotification($result['detailed_koperasi_results']);
+
+            // Update batch progress if this payslip is part of a batch
+            if ($this->payslip->batch_id) {
+                $batchOperation = $this->payslip->batchOperation;
+                if ($batchOperation) {
+                    $batchOperation->updateProgress();
+                }
+            }
+
+        } catch (\Exception $e) {
+            Log::error('Enhanced payslip processing failed for ID ' . $this->payslip->id, [
+                'error' => $e->getMessage(),
+            ]);
+            
+            // Fallback to legacy processing if the enhanced processing fails
+            $this->handleLegacyProcessing();
+        }
+    }
+
+    /**
+     * Fallback legacy processing method
+     */
+    private function handleLegacyProcessing(): void
+    {
+        try {
+            $this->payslip->update([
+                'status' => 'processing',
+                'processing_started_at' => now(),
+            ]);
+
             $path = Storage::path($this->payslip->file_path);
             $mime = Storage::mimeType($this->payslip->file_path);
             $text = '';
 
-            if ($debugMode) {
-                Log::info('Starting OCR processing', [
-                    'payslip_id' => $this->payslip->id,
-                    'file_path' => $path,
-                    'mime_type' => $mime,
-                    'file_size' => Storage::size($this->payslip->file_path),
-                ]);
-            }
-
             if ($mime === 'application/pdf') {
-                // Try different pdftotext paths for production
-                $pdfToTextPath = env('PDFTOTEXT_PATH');
-                if (!$pdfToTextPath || !file_exists($pdfToTextPath)) {
-                    // Try common paths
-                    $commonPaths = [
-                        '/usr/bin/pdftotext',
-                        '/usr/local/bin/pdftotext',
-                        '/opt/plesk/php/8.3/bin/pdftotext',
-                        'pdftotext'
-                    ];
-                    
-                    $pdfToTextPath = null;
-                    foreach ($commonPaths as $checkPath) {
-                        if ($checkPath === 'pdftotext' || file_exists($checkPath)) {
-                            $pdfToTextPath = $checkPath;
-                            break;
-                        }
-                    }
-                }
+                $settingsService = app(SettingsService::class);
+                $pdfToTextPath = $settingsService->get('ocr.pdftotext_path', '/usr/bin/pdftotext');
                 
-                if ($pdfToTextPath) {
-                    try {
-                        $text = (new Pdf($pdfToTextPath))->setPdf($path)->text();
-                    } catch (\Exception $pdfError) {
-                        // If PDF extraction fails, fall back to OCR
-                        if ($debugMode) {
-                            Log::warning('PDF extraction failed, falling back to OCR', [
-                                'payslip_id' => $this->payslip->id,
-                                'pdf_error' => $pdfError->getMessage()
-                            ]);
-                        }
-                        $text = $this->performOCR($path);
-                    }
-                } else {
-                    // No pdftotext available, use OCR for PDF too
-                    if ($debugMode) {
-                        Log::info('pdftotext not available, using OCR for PDF', [
-                            'payslip_id' => $this->payslip->id
-                        ]);
-                    }
+                try {
+                    $text = (new Pdf($pdfToTextPath))->setPdf($path)->text();
+                } catch (\Exception $pdfError) {
                     $text = $this->performOCR($path);
                 }
             } else {
                 $text = $this->performOCR($path);
-            }
-
-            // Log extracted text for debugging
-            if ($debugMode) {
-                Log::info('OCR extraction completed', [
-                    'payslip_id' => $this->payslip->id,
-                    'text_length' => strlen($text),
-                    'processing_time' => now()->diffInSeconds($this->payslip->processing_started_at),
-                ]);
-            } else {
-                Log::info('Extracted OCR text for payslip ' . $this->payslip->id, [
-                    'text_length' => strlen($text),
-                    'text_preview' => substr($text, 0, 500),
-                    'full_text' => $text
-                ]);
             }
 
             $extractedData = $this->extractPayslipData($text);
@@ -152,10 +116,7 @@ class ProcessPayslip implements ShouldQueue
                         $extractedData
                     );
                     
-                    // Keep the old format for backward compatibility
                     $koperasiResults[$koperasi->name] = $eligibilityCheck['eligible'];
-                    
-                    // Store detailed results for Telegram
                     $detailedKoperasiResults[$koperasi->name] = [
                         'eligible' => $eligibilityCheck['eligible'],
                         'reasons' => $eligibilityCheck['reasons']
@@ -179,18 +140,15 @@ class ProcessPayslip implements ShouldQueue
                     'detailed_koperasi_results' => $detailedKoperasiResults,
                     'debug_info' => [
                         'text_length' => strlen($text),
-                        'extraction_patterns_found' => $extractedData['debug_patterns']
+                        'extraction_patterns_found' => $extractedData['debug_patterns'],
+                        'processed_with' => 'legacy_fallback'
                     ]
                 ],
             ]);
 
-            // Send result to Telegram if this payslip came from Telegram
             $this->sendTelegramNotification($detailedKoperasiResults);
-            
-            // Send result to WhatsApp if this payslip came from WhatsApp
             $this->sendWhatsAppNotification($detailedKoperasiResults);
 
-            // Update batch progress if this payslip is part of a batch
             if ($this->payslip->batch_id) {
                 $batchOperation = $this->payslip->batchOperation;
                 if ($batchOperation) {
@@ -199,7 +157,7 @@ class ProcessPayslip implements ShouldQueue
             }
 
         } catch (\Exception $e) {
-            Log::error('Payslip processing failed for ID ' . $this->payslip->id, [
+            Log::error('Legacy payslip processing failed for ID ' . $this->payslip->id, [
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString()
             ]);
@@ -211,13 +169,9 @@ class ProcessPayslip implements ShouldQueue
                 'extracted_data' => ['error' => $e->getMessage()],
             ]);
 
-            // Send failure notification to Telegram if this payslip came from Telegram
             $this->sendTelegramNotification([]);
-            
-            // Send failure notification to WhatsApp if this payslip came from WhatsApp
             $this->sendWhatsAppNotification([]);
 
-            // Update batch progress if this payslip is part of a batch
             if ($this->payslip->batch_id) {
                 $batchOperation = $this->payslip->batchOperation;
                 if ($batchOperation) {
@@ -229,6 +183,12 @@ class ProcessPayslip implements ShouldQueue
 
     private function extractPayslipData(string $text): array
     {
+        $settingsService = app(SettingsService::class);
+        $minSalary = $settingsService->get('general.min_salary_amount', 100);
+        $maxSalary = $settingsService->get('general.max_salary_amount', 50000);
+        $minPercentage = $settingsService->get('general.min_percentage', 10);
+        $maxPercentage = $settingsService->get('general.max_percentage', 100);
+        
         $data = [
             'peratus_gaji_bersih' => null,
             'gaji_bersih' => null,
@@ -300,6 +260,29 @@ class ProcessPayslip implements ShouldQueue
             $data['debug_patterns'][] = 'jumlah_pendapatan found (inline)';
         }
 
+        // Handle side-by-side format for Malaysian government payslips
+        if (preg_match('/jumlah\s+pendapatan\s*:\s*([\d,]+\.\d{2}).*?jumlah\s+potongan\s*:\s*([\d,]+\.\d{2})/i', $originalText, $matches)) {
+            if ($data['jumlah_pendapatan'] === null) {
+                $data['jumlah_pendapatan'] = (float) str_replace(',', '', $matches[1]);
+                $data['debug_patterns'][] = 'jumlah_pendapatan found (side-by-side format)';
+            }
+            if ($data['jumlah_potongan'] === null) {
+                $data['jumlah_potongan'] = (float) str_replace(',', '', $matches[2]);
+                $data['debug_patterns'][] = 'jumlah_potongan found (side-by-side format)';
+            }
+        }
+
+        // Handle side-by-side format for Gaji Bersih
+        if (preg_match('/pendapatan\s+bercukai\s*:\s*([\d,]+\.\d{2}).*?gaji\s+bersih\s*:\s*([\d,]+\.\d{2})/i', $originalText, $matches)) {
+            if ($data['gaji_bersih'] === null) {
+                $gajiBersihValue = (float) str_replace(',', '', $matches[2]);
+                if ($gajiBersihValue > $minSalary && $gajiBersihValue < $maxSalary) {
+                    $data['gaji_bersih'] = $gajiBersihValue;
+                    $data['debug_patterns'][] = 'gaji_bersih found (side-by-side with pendapatan bercukai)';
+                }
+            }
+        }
+
         // Extract values using the specific Malaysian payslip format
         // The format can be either inline like "% Peratus Gaji Bersih : 91.26"
         // Or multiline format where labels and values are separated:
@@ -324,12 +307,16 @@ class ProcessPayslip implements ShouldQueue
             '/%\s*peratus\s+gaji\s+bersih\s*:\s*([\d,]+\.?\d*)/i',
             '/peratus\s+gaji\s+bersih.*?:\s*([\d,]+\.?\d*)/i',
             '/peratus\s+gaji\s+bersih.*?([\d,]+\.?\d*)/i',
+            // Pattern for Malaysian government payslips with leading spaces
+            '/%\s*peratus\s+gaji\s+bersih\s*:\s*([\d,]+\.\d{1,2})\s*$/im',
+            // Pattern after gaji bersih context
+            '/gaji\s+bersih\s*:\s*[\d,]+\.\d{2}.*?%\s*peratus\s+gaji\s+bersih\s*:\s*([\d,]+\.\d{2})/im',
         ];
 
         foreach ($patterns as $pattern) {
             if (preg_match($pattern, $cleanText, $matches)) {
                 $value = (float) str_replace(',', '', $matches[1]);
-                if ($value >= 10 && $value <= 100) {
+                if ($value >= $minPercentage && $value <= $maxPercentage) {
                     $data['peratus_gaji_bersih'] = $value;
                     $data['debug_patterns'][] = 'peratus_gaji_bersih found (inline): ' . $value;
                     break;
@@ -386,7 +373,7 @@ class ProcessPayslip implements ShouldQueue
                             // The percentage should be the third number (index 2)
                             if (count($numberLines) >= 3) {
                                 $percentageValue = $numberLines[2];
-                                if ($percentageValue >= 10 && $percentageValue <= 100) {
+                                if ($percentageValue >= $minPercentage && $percentageValue <= $maxPercentage) {
                                     $data['peratus_gaji_bersih'] = $percentageValue;
                                     $data['debug_patterns'][] = 'peratus_gaji_bersih found (multiline): ' . $percentageValue;
                                     break;
@@ -403,7 +390,7 @@ class ProcessPayslip implements ShouldQueue
         if ($data['peratus_gaji_bersih'] === null) {
             if (preg_match('/\(\s*([\d,]+\.?\d*)\s*\)/', $cleanText, $matches)) {
                 $value = (float) str_replace(',', '', $matches[1]);
-                if ($value >= 10 && $value <= 100) {
+                if ($value >= $minPercentage && $value <= $maxPercentage) {
                     $data['peratus_gaji_bersih'] = $value;
                     $data['debug_patterns'][] = 'peratus_gaji_bersih found (parentheses): ' . $value;
                 }
@@ -423,7 +410,7 @@ class ProcessPayslip implements ShouldQueue
                 if (preg_match($pattern, $cleanText, $matches)) {
                     $value = (float) str_replace(',', '', $matches[1]);
                     $data['debug_patterns'][] = 'gaji_bersih attempt (inline): ' . $value . ' from pattern: ' . $pattern . ' match: ' . $matches[1];
-                    if ($value > 100 && $value < 50000) { // Reasonable salary range
+                    if ($value > $minSalary && $value < $maxSalary) { // Configurable salary range
                         $data['gaji_bersih'] = $value;
                         $data['debug_patterns'][] = 'gaji_bersih found (inline): ' . $value;
                         break;
@@ -440,7 +427,7 @@ class ProcessPayslip implements ShouldQueue
             if (preg_match('/gaji\s+bersih\s*:.*?([\d,]+\.?\d*)/i', $originalText, $matches)) {
                 $value = (float) str_replace(',', '', $matches[1]);
                 $data['debug_patterns'][] = 'gaji_bersih attempt (targeted): ' . $value . ' from match: ' . $matches[1];
-                if ($value > 100 && $value < 50000) { // Reasonable salary range
+                if ($value > $minSalary && $value < $maxSalary) { // Configurable salary range
                     $data['gaji_bersih'] = $value;
                     $data['debug_patterns'][] = 'gaji_bersih found (targeted): ' . $value;
                 } else {
@@ -455,7 +442,7 @@ class ProcessPayslip implements ShouldQueue
             if (preg_match('/jumlah\s+potongan\s*:\s*([\d,]+\.?\d*).*?gaji\s+bersih\s*:\s*([\d,]+\.?\d*)/is', $originalText, $matches)) {
                 $gajiBersihValue = (float) str_replace(',', '', $matches[2]);
                 $data['debug_patterns'][] = 'gaji_bersih attempt (context): ' . $gajiBersihValue . ' from match: ' . $matches[2];
-                if ($gajiBersihValue > 100 && $gajiBersihValue < 50000) {
+                if ($gajiBersihValue > $minSalary && $gajiBersihValue < $maxSalary) {
                     $data['gaji_bersih'] = $gajiBersihValue;
                     $data['debug_patterns'][] = 'gaji_bersih found (context): ' . $gajiBersihValue;
                 } else {
@@ -472,7 +459,7 @@ class ProcessPayslip implements ShouldQueue
                 if (preg_match('/gaji\s+bersih/i', $line) && preg_match('/:\s*([\d,]+\.?\d*)/i', $line, $matches)) {
                     $value = (float) str_replace(',', '', $matches[1]);
                     $data['debug_patterns'][] = 'gaji_bersih attempt (line-by-line): ' . $value . ' from line: ' . trim($line);
-                    if ($value > 100 && $value < 50000) {
+                    if ($value > $minSalary && $value < $maxSalary) {
                         $data['gaji_bersih'] = $value;
                         $data['debug_patterns'][] = 'gaji_bersih found (line-by-line): ' . $value;
                         break;
@@ -491,7 +478,7 @@ class ProcessPayslip implements ShouldQueue
             if (preg_match($pattern, $cleanText, $matches)) {
                 $value = (float) str_replace(',', '', $matches[1]);
                 $data['debug_patterns'][] = 'jumlah_potongan attempt: ' . $value . ' from match: ' . $matches[1];
-                if ($value >= 0 && $value < 50000) { // Reasonable range for deductions
+                if ($value >= 0 && $value < $maxSalary) { // Configurable range for deductions
                     $data['jumlah_potongan'] = $value;
                     $data['debug_patterns'][] = 'jumlah_potongan found: ' . $value;
                     break;
@@ -528,7 +515,7 @@ class ProcessPayslip implements ShouldQueue
                                 if ($data['jumlah_potongan'] === null) {
                                     $potonganValue = $numberLines[0];
                                     $data['debug_patterns'][] = 'jumlah_potongan attempt (structure): ' . $potonganValue;
-                                    if ($potonganValue >= 0 && $potonganValue < 50000) {
+                                    if ($potonganValue >= 0 && $potonganValue < $maxSalary) {
                                         $data['jumlah_potongan'] = $potonganValue;
                                         $data['debug_patterns'][] = 'jumlah_potongan found (structure): ' . $potonganValue;
                                     }
@@ -538,7 +525,7 @@ class ProcessPayslip implements ShouldQueue
                                 if (count($numberLines) >= 2 && $data['gaji_bersih'] === null) {
                                     $gajiBersihValue = $numberLines[1];
                                     $data['debug_patterns'][] = 'gaji_bersih attempt (structure): ' . $gajiBersihValue;
-                                    if ($gajiBersihValue > 100 && $gajiBersihValue < 50000) {
+                                    if ($gajiBersihValue > $minSalary && $gajiBersihValue < $maxSalary) {
                                         $data['gaji_bersih'] = $gajiBersihValue;
                                         $data['debug_patterns'][] = 'gaji_bersih found (structure): ' . $gajiBersihValue;
                                     }
@@ -565,11 +552,11 @@ class ProcessPayslip implements ShouldQueue
             $calculatedGajiBersih = $data['jumlah_pendapatan'] - $data['jumlah_potongan'];
             
             // Validate the calculated value is reasonable
-            if ($calculatedGajiBersih > 0 && $calculatedGajiBersih < 50000) {
+            if ($calculatedGajiBersih > 0 && $calculatedGajiBersih < $maxSalary) {
                 $data['gaji_bersih'] = round($calculatedGajiBersih, 2);
                 $data['debug_patterns'][] = 'gaji_bersih calculated: ' . $data['gaji_bersih'] . ' (Pendapatan: ' . $data['jumlah_pendapatan'] . ' - Potongan: ' . $data['jumlah_potongan'] . ')';
             } else {
-                $data['debug_patterns'][] = 'gaji_bersih calculation rejected: ' . $calculatedGajiBersih . ' (out of reasonable range)';
+                $data['debug_patterns'][] = 'gaji_bersih calculation rejected: ' . $calculatedGajiBersih . ' (out of configurable range)';
             }
         } else {
             $data['debug_patterns'][] = 'Calculation skipped - conditions not met';
@@ -584,7 +571,7 @@ class ProcessPayslip implements ShouldQueue
     private function performOCR(string $filePath): string
     {
         $settingsService = app(SettingsService::class);
-        $ocrMethod = env('OCR_METHOD', 'ocrspace'); // Default to ocrspace for shared hosting
+        $ocrMethod = $settingsService->get('ocr.method', env('OCR_METHOD', 'ocrspace')); // Use settings first, then env, then default
         $debugMode = $settingsService->get('advanced.enable_debug_mode', false);
         
         // Always log OCR method selection for troubleshooting
@@ -619,9 +606,10 @@ class ProcessPayslip implements ShouldQueue
      */
     private function performOCRSpace(string $filePath): string
     {
-        $apiKey = env('OCRSPACE_API_KEY');
+        $settingsService = app(SettingsService::class);
+        $apiKey = $settingsService->get('ocr.ocrspace_api_key', env('OCRSPACE_API_KEY'));
         if (!$apiKey) {
-            throw new \Exception('OCR.space API key not configured');
+            throw new \Exception('OCR.space API key not configured. Please configure it in settings or .env file');
         }
         
         $settingsService = app(SettingsService::class);
@@ -661,7 +649,8 @@ class ProcessPayslip implements ShouldQueue
             curl_setopt($ch, CURLOPT_POST, true);
             curl_setopt($ch, CURLOPT_POSTFIELDS, $postData);
             curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-            curl_setopt($ch, CURLOPT_TIMEOUT, 120); // 2 minutes timeout
+            $ocrTimeout = $settingsService->get('ocr.api_timeout', 120); // Configurable timeout
+            curl_setopt($ch, CURLOPT_TIMEOUT, $ocrTimeout);
             curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
             
             $response = curl_exec($ch);

@@ -33,6 +33,10 @@ class ApiRateLimitMiddleware
         // Get rate limit settings
         $perMinuteLimit = $this->settingsService->get('api.rate_limit_per_minute', 60);
         $perHourLimit = $this->settingsService->get('api.rate_limit_per_hour', 1000);
+        
+        // Define TTL values
+        $minuteTTL = 60; // 1 minute in seconds
+        $hourTTL = 3600; // 1 hour in seconds
 
         // Determine the key for rate limiting (IP or user-based)
         $identifier = $this->getIdentifier($request);
@@ -53,7 +57,7 @@ class ApiRateLimitMiddleware
             return response()->json([
                 'error' => 'Rate limit exceeded',
                 'message' => "Too many requests. Maximum {$perMinuteLimit} requests per minute allowed.",
-                'retry_after' => 60
+                'retry_after' => $minuteTTL ?? 60
             ], 429);
         }
 
@@ -73,13 +77,13 @@ class ApiRateLimitMiddleware
             return response()->json([
                 'error' => 'Rate limit exceeded',
                 'message' => "Too many requests. Maximum {$perHourLimit} requests per hour allowed.",
-                'retry_after' => 3600
+                'retry_after' => $hourTTL
             ], 429);
         }
 
-        // Increment counters
-        Cache::put($minuteKey, $minuteRequests + 1, 60); // 1 minute TTL
-        Cache::put($hourKey, $hourRequests + 1, 3600); // 1 hour TTL
+        // Increment counters with proper TTL
+        Cache::put($minuteKey, $minuteRequests + 1, $minuteTTL);
+        Cache::put($hourKey, $hourRequests + 1, $hourTTL);
 
         // Add rate limit headers to response
         $response = $next($request);

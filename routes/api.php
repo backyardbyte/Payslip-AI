@@ -21,11 +21,18 @@ Route::middleware(['web', 'auth'])->withoutMiddleware([\Illuminate\Foundation\Ht
     Route::get('/status/{payslip}', [PayslipController::class, 'status']);
     
     // Payslip History routes (for History page - shows all payslips)
+    // Note: Specific routes must come BEFORE parameterized routes
     Route::get('/payslips', [PayslipController::class, 'index']);
-    Route::delete('/payslips/{payslip}', [PayslipController::class, 'destroy']);
+    Route::get('/payslips/analytics', [PayslipController::class, 'analytics']);
+    Route::get('/payslips/statistics', [PayslipController::class, 'statistics']);
+    Route::post('/payslips/bulk-action', [PayslipController::class, 'bulkAction']);
     Route::delete('/payslips', [PayslipController::class, 'clearAll']);
     Route::delete('/payslips/clear/completed', [PayslipController::class, 'clearCompleted']);
-    Route::get('/payslips/statistics', [PayslipController::class, 'statistics']);
+    
+    // Parameterized routes must come AFTER specific routes
+    Route::get('/payslips/{payslip}', [PayslipController::class, 'show']);
+    Route::post('/payslips/{payslip}/reprocess', [PayslipController::class, 'reprocess']);
+    Route::delete('/payslips/{payslip}', [PayslipController::class, 'destroy']);
     
     // Queue routes (for Dashboard - shows current processing queue)
     Route::get('/queue', [PayslipController::class, 'queue']);

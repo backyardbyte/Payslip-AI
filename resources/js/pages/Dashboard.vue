@@ -107,26 +107,102 @@
                 </div>
 
                 <!-- Single Upload Mode -->
-                <Card v-if="uploadMode === 'single'">
-                    <CardHeader>
-                        <CardTitle class="flex items-center gap-2">
-                            <UploadCloud class="h-5 w-5" />
-                            Payslip Uploader
-                        </CardTitle>
-                        <CardDescription>Drag and drop your payslips below or click to select files.</CardDescription>
+                <Card v-if="uploadMode === 'single'" class="border-2 border-dashed border-muted-foreground/25 hover:border-primary/50 transition-colors">
+                    <CardHeader class="text-center pb-4">
+                        <div class="mx-auto w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mb-4">
+                            <UploadCloud class="h-8 w-8 text-primary" />
+                        </div>
+                        <CardTitle class="text-xl">Enhanced Payslip Uploader</CardTitle>
+                        <CardDescription class="text-base">
+                            Drag and drop your payslips or click to browse. 
+                            <br />
+                            <span class="text-primary font-medium">AI-powered processing</span> with real-time validation
+                        </CardDescription>
                     </CardHeader>
-                    <CardContent class="flex flex-col gap-6">
+                    <CardContent class="space-y-6">
+                        <!-- Enhanced Drop Zone -->
                         <div
                             @dragover.prevent="onDragOver"
                             @dragleave.prevent="onDragLeave"
                             @drop.prevent="onDrop"
-                            :class="['flex flex-col items-center justify-center p-12 border-2 border-dashed rounded-lg cursor-pointer transition-colors', isDragging ? 'border-primary bg-primary/10' : 'border-border']"
+                            :class="[
+                                'relative flex flex-col items-center justify-center p-12 border-2 border-dashed rounded-xl cursor-pointer transition-all duration-300 group',
+                                isDragging 
+                                    ? 'border-primary bg-primary/10 scale-[1.02] shadow-lg' 
+                                    : 'border-muted-foreground/25 hover:border-primary/50 hover:bg-muted/30'
+                            ]"
                             @click="openFileDialog"
                         >
                             <input type="file" ref="fileInput" @change="onFileSelected" multiple class="hidden" accept=".pdf,.png,.jpg,.jpeg" />
-                            <UploadCloud class="w-12 h-12 text-muted-foreground" />
-                            <p class="mt-4 text-muted-foreground">Click or drag files here to upload</p>
-                            <p class="mt-2 text-xs text-muted-foreground">Supports PDF, PNG, JPG, JPEG (max 5MB)</p>
+                            
+                            <!-- Animated Upload Icon -->
+                            <div class="relative mb-6">
+                                <div :class="[
+                                    'w-20 h-20 rounded-full flex items-center justify-center transition-all duration-300',
+                                    isDragging ? 'bg-primary text-white scale-110' : 'bg-muted group-hover:bg-primary/10 group-hover:scale-105'
+                                ]">
+                                    <UploadCloud :class="[
+                                        'transition-all duration-300',
+                                        isDragging ? 'w-10 h-10 animate-bounce' : 'w-8 h-8 text-muted-foreground group-hover:text-primary'
+                                    ]" />
+                                </div>
+                                
+                                <!-- Animated rings for drag state -->
+                                <div v-if="isDragging" class="absolute inset-0 animate-ping">
+                                    <div class="w-20 h-20 rounded-full bg-primary/20"></div>
+                                </div>
+                            </div>
+                            
+                            <!-- Upload Text -->
+                            <div class="text-center space-y-2">
+                                <h3 :class="[
+                                    'text-xl font-semibold transition-colors',
+                                    isDragging ? 'text-primary' : 'text-foreground group-hover:text-primary'
+                                ]">
+                                    {{ isDragging ? 'Drop files here!' : 'Upload Payslips' }}
+                                </h3>
+                                <p class="text-muted-foreground">
+                                    {{ isDragging ? 'Release to start processing' : 'Drag & drop files or click to browse' }}
+                                </p>
+                                <div class="flex items-center justify-center space-x-4 text-sm text-muted-foreground">
+                                    <div class="flex items-center space-x-1">
+                                        <div class="w-2 h-2 bg-green-500 rounded-full"></div>
+                                        <span>PDF, PNG, JPG</span>
+                                    </div>
+                                    <div class="w-1 h-1 bg-muted-foreground rounded-full"></div>
+                                    <div class="flex items-center space-x-1">
+                                        <div class="w-2 h-2 bg-blue-500 rounded-full"></div>
+                                        <span>Max 10MB</span>
+                                    </div>
+                                    <div class="w-1 h-1 bg-muted-foreground rounded-full"></div>
+                                    <div class="flex items-center space-x-1">
+                                        <div class="w-2 h-2 bg-purple-500 rounded-full"></div>
+                                        <span>Multiple files</span>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- Upload Progress Overlay -->
+                            <div v-if="isUploading" class="absolute inset-0 bg-background/95 backdrop-blur-sm flex items-center justify-center rounded-xl">
+                                <div class="text-center space-y-4">
+                                    <div class="relative">
+                                        <LoaderCircle class="w-12 h-12 animate-spin text-primary mx-auto" />
+                                        <div class="absolute inset-0 flex items-center justify-center">
+                                            <span class="text-xs font-bold text-primary">{{ Math.round((uploadedCount / totalFilesToUpload) * 100) }}%</span>
+                                        </div>
+                                    </div>
+                                    <div class="space-y-2">
+                                        <p class="font-medium">Processing {{ uploadedCount }} of {{ totalFilesToUpload }} files</p>
+                                        <div class="w-64 bg-muted rounded-full h-2 mx-auto">
+                                            <div 
+                                                class="bg-primary h-2 rounded-full transition-all duration-500 ease-out"
+                                                :style="{ width: `${(uploadedCount / totalFilesToUpload) * 100}%` }"
+                                            ></div>
+                                        </div>
+                                        <p class="text-sm text-muted-foreground">AI is analyzing your payslips...</p>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
 
                         <div v-if="files.length > 0" class="space-y-4">
@@ -448,6 +524,8 @@ const fileInput = ref<HTMLInputElement | null>(null)
 const isPreviewOpen = ref(false)
 const fileToPreview = ref<UploadableFile | null>(null)
 const uploadMode = ref<'single' | 'batch'>('single')
+const uploadedCount = ref(0)
+const totalFilesToUpload = ref(0)
 let pollingInterval: number | undefined
 
 const { 
@@ -520,6 +598,8 @@ const uploadPayslips = async () => {
     if (filesToUpload.length === 0) return;
     
     isUploading.value = true;
+    uploadedCount.value = 0;
+    totalFilesToUpload.value = filesToUpload.length;
 
     const uploadPromises = filesToUpload.map(uploadableFile => {
         if (uploadableFile.status === 'error') {
@@ -573,12 +653,14 @@ const uploadPayslips = async () => {
                         uploadableFile.error = `Server returned status ${xhr.status}.`;
                     }
                 }
+                uploadedCount.value++;
                 resolve();
             };
 
             xhr.onerror = () => {
                 uploadableFile.status = 'error';
                 uploadableFile.error = 'Network error during upload.'
+                uploadedCount.value++;
                 resolve();
             };
 
@@ -610,6 +692,8 @@ const uploadPayslips = async () => {
     }
     
     isUploading.value = false;
+    uploadedCount.value = 0;
+    totalFilesToUpload.value = 0;
 };
 
 const statusClass = (status: QueuedFile['status']) => {

@@ -11,9 +11,31 @@
 $appRoot = __DIR__;
 chdir($appRoot);
 
+// Load environment variables from .env file
+if (file_exists($appRoot . '/.env')) {
+    $envContent = file_get_contents($appRoot . '/.env');
+    $lines = explode("\n", $envContent);
+    foreach ($lines as $line) {
+        $line = trim($line);
+        if (!empty($line) && strpos($line, '=') !== false && substr($line, 0, 1) !== '#') {
+            list($key, $value) = explode('=', $line, 2);
+            $key = trim($key);
+            $value = trim($value, '"\'');
+            if (!empty($key)) {
+                putenv("$key=$value");
+            }
+        }
+    }
+}
+
+// Get configuration from environment
+$telegramTimeout = getenv('TELEGRAM_BOT_TIMEOUT') ?: 600; // Default 10 minutes
+$telegramMemory = getenv('TELEGRAM_BOT_MEMORY') ?: 256; // Default 256MB
+$phpBinaryPath = getenv('PHP_BINARY_PATH') ?: '';
+
 // Set execution time and memory limits
-set_time_limit(600); // 10 minutes max
-ini_set('memory_limit', '256M');
+set_time_limit($telegramTimeout);
+ini_set('memory_limit', $telegramMemory . 'M');
 
 // Get action from command line argument or default to 'poll'
 $action = $argv[1] ?? 'poll';
@@ -21,6 +43,7 @@ $action = $argv[1] ?? 'poll';
 // Log start time
 $startTime = date('Y-m-d H:i:s');
 echo "[$startTime] Starting Telegram Bot ($action)...\n";
+echo "Configuration: Timeout={$telegramTimeout}s, Memory={$telegramMemory}MB\n";
 
 // Check if .env file exists
 if (!file_exists($appRoot . '/.env')) {
@@ -31,43 +54,48 @@ if (!file_exists($appRoot . '/.env')) {
 $command = '';
 $logFile = $appRoot . '/storage/logs/telegram-bot.log';
 
+// Determine PHP binary path
+if (!empty($phpBinaryPath) && file_exists($phpBinaryPath)) {
+    $phpBinary = $phpBinaryPath;
+} else {
+    // Try common PHP binary paths
+    $phpPaths = [
+        '/opt/plesk/php/8.3/bin/php',
+        '/opt/plesk/php/8.2/bin/php',
+        '/opt/plesk/php/8.1/bin/php',
+        '/usr/bin/php8.3',
+        '/usr/bin/php8.2',
+        '/usr/bin/php8.1',
+        '/usr/bin/php'
+    ];
+    
+    $phpBinary = 'php'; // Default fallback
+    foreach ($phpPaths as $path) {
+        if (file_exists($path)) {
+            $phpBinary = $path;
+            break;
+        }
+    }
+}
+
+echo "Using PHP binary: $phpBinary\n";
+
 switch ($action) {
     case 'poll':
     case 'polling':
-        // Use artisan command for polling with correct PHP version
-        $phpBinary = '/opt/plesk/php/8.3/bin/php'; // Plesk PHP 8.3 path
-        if (!file_exists($phpBinary)) {
-            $phpBinary = '/usr/bin/php8.3'; // Alternative path
-        }
-        if (!file_exists($phpBinary)) {
-            $phpBinary = 'php'; // Fallback to system default
-        }
+        // Use artisan command for polling
         $command = $phpBinary . ' artisan telegram:bot run';
         echo "Running Telegram bot with polling...\n";
         break;
         
     case 'webhook':
         // Use artisan command for webhook setup
-        $phpBinary = '/opt/plesk/php/8.3/bin/php'; // Plesk PHP 8.3 path
-        if (!file_exists($phpBinary)) {
-            $phpBinary = '/usr/bin/php8.3'; // Alternative path
-        }
-        if (!file_exists($phpBinary)) {
-            $phpBinary = 'php'; // Fallback to system default
-        }
         $command = $phpBinary . ' artisan telegram:bot webhook';
         echo "Setting up Telegram webhook...\n";
         break;
         
     case 'setup':
         // Use artisan command for setup
-        $phpBinary = '/opt/plesk/php/8.3/bin/php'; // Plesk PHP 8.3 path
-        if (!file_exists($phpBinary)) {
-            $phpBinary = '/usr/bin/php8.3'; // Alternative path
-        }
-        if (!file_exists($phpBinary)) {
-            $phpBinary = 'php'; // Fallback to system default
-        }
         $command = $phpBinary . ' artisan telegram:bot setup';
         echo "Setting up Telegram bot...\n";
         break;
@@ -89,13 +117,6 @@ switch ($action) {
         echo "✅ TELEGRAM_BOT_TOKEN is configured\n";
         
         // Test artisan command
-        $phpBinary = '/opt/plesk/php/8.3/bin/php'; // Plesk PHP 8.3 path
-        if (!file_exists($phpBinary)) {
-            $phpBinary = '/usr/bin/php8.3'; // Alternative path
-        }
-        if (!file_exists($phpBinary)) {
-            $phpBinary = 'php'; // Fallback to system default
-        }
         $testCommand = $phpBinary . ' artisan telegram:bot setup 2>&1';
         exec($testCommand, $testOutput, $testReturn);
         
@@ -152,8 +173,9 @@ $returnCode = 0;
 
 // For polling, we want to limit execution time
 if ($action === 'poll' || $action === 'polling') {
-    // Run with timeout to prevent hanging
-    $command = "timeout 300 $command"; // 5 minutes max
+    // Run with timeout (use half of script timeout to allow for cleanup)
+    $commandTimeout = intval($telegramTimeout / 2);
+    $command = "timeout $commandTimeout $command";
 }
 
 exec($command . ' 2>&1', $output, $returnCode);

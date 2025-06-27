@@ -6,78 +6,110 @@ use Illuminate\Console\Command;
 
 class TestPercentageExtraction extends Command
 {
-    protected $signature = 'test:percentage';
-    protected $description = 'Test percentage extraction patterns with sample payslip text';
+    protected $signature = 'test:percentage-extraction';
+    protected $description = 'Test percentage extraction from various payslip formats';
 
     public function handle()
     {
-        // Sample text based on your payslip
-        $sampleText = "% Peratus Gaji Bersih : 91.26";
-        
-        $this->info("Testing percentage extraction patterns...");
-        $this->info("Sample text: " . $sampleText);
-        $this->info("");
+        $this->info('Testing percentage extraction patterns...');
 
+        // Original test case
+        $sampleText = "% Peratus Gaji Bersih : 91.26";
+        $this->info("Test 1 - Original inline format:");
+        $this->line("Text: \"$sampleText\"");
+        $this->testExtractionPatterns($sampleText);
+
+        // Malaysian government payslip format (based on user's sample)
+        $malayGovSample = "
+        KERAJAAN MALAYSIA
+        1104 KEMENTERIAN KERJA RAYA                                    Bulan 02/2025
+        Nama            : MEOR RIDZWAN BIN ISMAIL                      Kump PTJ/PTJ     : 35 / 35232000
+        No. Gaji        : 20062437                                     Pusat Pembayar   : 8027 CAWANGAN KERJA KESIHATAN
+        No. K/B         : 821105-14-5133                               No Cukai FMSR    : IG234122710840 /
+        K.Pkja/Sub Pkja : A / 01 Pegawai Awam
+
+        Pendapatan                                                     Potongan
+        AMAUN (RM)                                                     AMAUN (RM)
+        0001  Gaji Pokok               4,572.76    2002  Cukai Pendapatan          110.50
+        1052  Im Ttp Khmidmatan          700.00    6025  Angkasa                  1,248.00
+        1055  Im Ttp Khidmat Awam        100.00    6026  Angkasa (Bukan PINJAMAN) 1,923.00
+        1072  Bt Khas Kewangan (BKK)    500.00
+        1362  B.Imb Sara Hidup           350.00
+
+        Jumlah Pendapatan           :    5,982.76    Jumlah Potongan          :    3,277.40
+        Pendapatan Bercukai         :    4,672.76    Gaji Bersih              :    2,705.36
+                                                    % Peratus Gaji Bersih    :       45.22
+
+        Bank: BIMBMYKL                              No Akaun Bank: 141530233XXXXX                  ( M/S: 1/1 )
+        ";
+
+        $this->info("\nTest 2 - Malaysian Government Payslip format:");
+        $this->line("Text: [Malaysian government payslip sample]");
+        $this->testExtractionPatterns($malayGovSample);
+
+        // Another variant with different spacing
+        $malayGovVariant = "
+        Jumlah Pendapatan : 5,982.76 Jumlah Potongan : 3,277.40
+        Pendapatan Bercukai : 4,672.76 Gaji Bersih : 2,705.36
+        % Peratus Gaji Bersih : 45.22
+        ";
+
+        $this->info("\nTest 3 - Malaysian Government variant (compressed):");
+        $this->line("Text: [Compressed format]");
+        $this->testExtractionPatterns($malayGovVariant);
+
+        // Edge case with different decimal places
+        $edgeCase = "% Peratus Gaji Bersih : 91.2";
+        $this->info("\nTest 4 - Edge case (1 decimal place):");
+        $this->line("Text: \"$edgeCase\"");
+        $this->testExtractionPatterns($edgeCase);
+
+        $this->info("\n✅ Testing completed!");
+    }
+
+    private function testExtractionPatterns(string $text): void
+    {
         $patterns = [
-            // Exact pattern from sample: "% Peratus Gaji Bersih : 91.26"
-            '/%\s*Peratus\s+Gaji\s+Bersih\s*:\s*([\d,]+\.?\d*)/i',
-            '/%\s*peratus\s+gaji\s+bersih\s*:\s*([\d,]+\.?\d*)/i',
-            
-            // Without colon
-            '/%\s*Peratus\s+Gaji\s+Bersih\s+([\d,]+\.?\d*)/i',
-            '/%\s*peratus\s+gaji\s+bersih\s+([\d,]+\.?\d*)/i',
-            
-            // More flexible patterns
-            '/peratus\s+gaji\s+bersih.*?:\s*([\d,]+\.?\d*)/i',
-            '/peratus\s+gaji\s+bersih.*?([\d,]+\.?\d*)/i',
-            
-            // Look for number patterns that could be percentage
-            '/%.*?([\d,]+\.?\d*)/i',
-            '/peratus.*?([\d,]+\.?\d*)/i'
+            '/%\s*Peratus\s+Gaji\s+Bersih\s*:\s*([\d,]+\.?\d*)/i' => 'Standard inline pattern',
+            '/%\s*peratus\s+gaji\s+bersih\s*:\s*([\d,]+\.?\d*)/i' => 'Case insensitive pattern',
+            '/%\s*peratus\s+gaji\s+bersih\s*:\s*([\d,]+\.\d{1,2})\s*$/im' => 'End of line with 1-2 decimals',
+            '/gaji\s+bersih\s*:\s*[\d,]+\.\d{2}.*?%\s*peratus\s+gaji\s+bersih\s*:\s*([\d,]+\.\d{2})/im' => 'After gaji bersih context',
         ];
 
-        foreach ($patterns as $index => $pattern) {
-            $this->info("Pattern " . ($index + 1) . ": " . $pattern);
-            
-            if (preg_match($pattern, $sampleText, $matches)) {
+        $found = false;
+        foreach ($patterns as $pattern => $description) {
+            if (preg_match($pattern, $text, $matches)) {
                 $value = (float) str_replace(',', '', $matches[1]);
-                if ($value >= 10 && $value <= 100) {
-                    $this->info("✓ MATCH FOUND: " . $value);
-                } else {
-                    $this->warn("✗ Value out of range: " . $value);
-                }
+                $this->line("  ✅ $description: Found $value%");
+                $found = true;
             } else {
-                $this->error("✗ No match");
+                $this->line("  ❌ $description: No match");
             }
-            $this->info("");
         }
 
-        // Test with the exact text from your processed payslip
-        $this->info("=== Testing with longer sample ===");
-        $longerSample = "Nama : Norhakimi Bin Sahimi
-No. Gaji : MD9011
-Bulan : 10/2025
-Bahagian/Jabatan/Unit : 
-Kumpulan Gaji : M01 - M40
-Pendapatan 0001 Gaji Pokok 3,198.61
-Jumlah Pendapatan : 4,213.61
-Potongan
-Jumlah Potongan Gaji Bersih % Peratus Gaji Bersih
-: : : :
-294.36 3,919.25 91.26 (91.26)";
+        if (!$found) {
+            $this->error("  ⚠️  No patterns matched!");
+        }
 
-        $this->info("Sample text length: " . strlen($longerSample));
+        // Test side-by-side extraction
+        $this->line("\n  Testing side-by-side patterns:");
         
-        foreach ($patterns as $index => $pattern) {
-            if (preg_match($pattern, $longerSample, $matches)) {
-                $value = (float) str_replace(',', '', $matches[1]);
-                if ($value >= 10 && $value <= 100) {
-                    $this->info("Pattern " . ($index + 1) . " MATCHED: " . $value);
-                    break;
-                }
-            }
+        // Test for side-by-side jumlah pendapatan and potongan
+        if (preg_match('/jumlah\s+pendapatan\s*:\s*([\d,]+\.\d{2}).*?jumlah\s+potongan\s*:\s*([\d,]+\.\d{2})/i', $text, $matches)) {
+            $pendapatan = (float) str_replace(',', '', $matches[1]);
+            $potongan = (float) str_replace(',', '', $matches[2]);
+            $this->line("  ✅ Side-by-side pendapatan/potongan: $pendapatan / $potongan");
+        } else {
+            $this->line("  ❌ Side-by-side pendapatan/potongan: No match");
         }
 
-        return 0;
+        // Test for side-by-side pendapatan bercukai and gaji bersih
+        if (preg_match('/pendapatan\s+bercukai\s*:\s*([\d,]+\.\d{2}).*?gaji\s+bersih\s*:\s*([\d,]+\.\d{2})/i', $text, $matches)) {
+            $bercukai = (float) str_replace(',', '', $matches[1]);
+            $gajiBersih = (float) str_replace(',', '', $matches[2]);
+            $this->line("  ✅ Side-by-side bercukai/gaji bersih: $bercukai / $gajiBersih");
+        } else {
+            $this->line("  ❌ Side-by-side bercukai/gaji bersih: No match");
+        }
     }
 } 
