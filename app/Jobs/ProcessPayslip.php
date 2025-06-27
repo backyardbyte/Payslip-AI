@@ -14,7 +14,7 @@ use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Log;
 use Spatie\PdfToText\Pdf;
-use thiagoalessio\TesseractOCR\TesseractOCR;
+
 
 class ProcessPayslip implements ShouldQueue
 {
@@ -90,9 +90,9 @@ class ProcessPayslip implements ShouldQueue
                     ];
                     
                     $pdfToTextPath = null;
-                    foreach ($commonPaths as $path) {
-                        if ($path === 'pdftotext' || file_exists($path)) {
-                            $pdfToTextPath = $path;
+                    foreach ($commonPaths as $checkPath) {
+                        if ($checkPath === 'pdftotext' || file_exists($checkPath)) {
+                            $pdfToTextPath = $checkPath;
                             break;
                         }
                     }
@@ -109,10 +109,7 @@ class ProcessPayslip implements ShouldQueue
                                 'pdf_error' => $pdfError->getMessage()
                             ]);
                         }
-                        $text = (new TesseractOCR($path))
-                            ->lang('eng+msa')
-                            ->configFile('bazaar')
-                            ->run();
+                        $text = $this->performOCR($path);
                     }
                 } else {
                     // No pdftotext available, use OCR for PDF too
@@ -587,14 +584,34 @@ class ProcessPayslip implements ShouldQueue
     private function performOCR(string $filePath): string
     {
         $settingsService = app(SettingsService::class);
-        $ocrMethod = env('OCR_METHOD', 'tesseract'); // tesseract or ocrspace
+        $ocrMethod = env('OCR_METHOD', 'ocrspace'); // Default to ocrspace for shared hosting
         $debugMode = $settingsService->get('advanced.enable_debug_mode', false);
         
+        // Always log OCR method selection for troubleshooting
+        Log::info('OCR method configuration', [
+            'payslip_id' => $this->payslip->id,
+            'method' => $ocrMethod,
+            'file_path' => $filePath,
+            'env_value' => env('OCR_METHOD'),
+            'default_used' => env('OCR_METHOD') === null ? 'yes' : 'no'
+        ]);
+        
+        // ALWAYS use OCR.space when configured, never try Tesseract
         if ($ocrMethod === 'ocrspace') {
             return $this->performOCRSpace($filePath);
-        } else {
+        }
+        
+        // Only use Tesseract if explicitly set to tesseract AND the class exists
+        if ($ocrMethod === 'tesseract' && class_exists('thiagoalessio\TesseractOCR\TesseractOCR')) {
             return $this->performTesseractOCR($filePath);
         }
+        
+        // Default to OCR.space for any other case
+        Log::info('Using OCR.space as default OCR method', [
+            'payslip_id' => $this->payslip->id,
+            'configured_method' => $ocrMethod
+        ]);
+        return $this->performOCRSpace($filePath);
     }
     
     /**
@@ -662,12 +679,26 @@ class ProcessPayslip implements ShouldQueue
             
             $result = json_decode($response, true);
             
-            if (!$result || !isset($result['ParsedResults'])) {
-                throw new \Exception('Invalid OCR.space API response');
+            if (!$result) {
+                throw new \Exception('Invalid OCR.space API response: Failed to decode JSON. Raw response: ' . substr($response, 0, 500));
+            }
+            
+            if (!isset($result['ParsedResults'])) {
+                // Log full response for debugging
+                Log::error('OCR.space API response missing ParsedResults', [
+                    'payslip_id' => $this->payslip->id,
+                    'response' => $result
+                ]);
+                throw new \Exception('Invalid OCR.space API response: Missing ParsedResults. Response: ' . json_encode($result));
             }
             
             if (isset($result['ErrorMessage']) && !empty($result['ErrorMessage'])) {
-                throw new \Exception('OCR.space API error: ' . implode(', ', $result['ErrorMessage']));
+                $errorMsg = is_array($result['ErrorMessage']) ? implode(', ', $result['ErrorMessage']) : $result['ErrorMessage'];
+                throw new \Exception('OCR.space API error: ' . $errorMsg);
+            }
+            
+            if (isset($result['OCRExitCode']) && $result['OCRExitCode'] != 1) {
+                throw new \Exception('OCR.space API failed with exit code: ' . $result['OCRExitCode']);
             }
             
             // Extract text from all parsed results
@@ -694,13 +725,8 @@ class ProcessPayslip implements ShouldQueue
                 'file_path' => $filePath
             ]);
             
-            // Fall back to Tesseract if available
-            if (class_exists('thiagoalessio\TesseractOCR\TesseractOCR')) {
-                Log::info('Falling back to Tesseract OCR for payslip ' . $this->payslip->id);
-                return $this->performTesseractOCR($filePath);
-            }
-            
-            throw $e;
+            // NEVER fall back to Tesseract when using OCR.space
+            throw new \Exception('OCR.space processing failed: ' . $e->getMessage() . '. Please check your OCR.space API key configuration.');
         }
     }
     
@@ -710,13 +736,18 @@ class ProcessPayslip implements ShouldQueue
     private function performTesseractOCR(string $filePath): string
     {
         if (!class_exists('thiagoalessio\TesseractOCR\TesseractOCR')) {
-            throw new \Exception('Tesseract OCR not available and OCR.space not configured');
+            throw new \Exception('Tesseract OCR library not available. Please set OCR_METHOD=ocrspace in your .env file to use cloud OCR.');
         }
         
-        return (new TesseractOCR($filePath))
-            ->lang('eng+msa') // English and Malay language support
-            ->configFile('bazaar') // Better for mixed text
-            ->run();
+        try {
+            $tesseractClass = 'thiagoalessio\TesseractOCR\TesseractOCR';
+            return (new $tesseractClass($filePath))
+                ->lang('eng+msa') // English and Malay language support
+                ->configFile('bazaar') // Better for mixed text
+                ->run();
+        } catch (\Exception $e) {
+            throw new \Exception('Tesseract OCR failed: ' . $e->getMessage() . '. Consider using OCR.space by setting OCR_METHOD=ocrspace in your .env file.');
+        }
     }
 
     private function checkEligibility(float $peratusGajiBersih, array $rules, array $extractedData): array
