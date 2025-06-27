@@ -78,7 +78,54 @@ class ProcessPayslip implements ShouldQueue
             }
 
             if ($mime === 'application/pdf') {
-                $text = (new Pdf(env('PDFTOTEXT_PATH')))->setPdf($path)->text();
+                // Try different pdftotext paths for production
+                $pdfToTextPath = env('PDFTOTEXT_PATH');
+                if (!$pdfToTextPath || !file_exists($pdfToTextPath)) {
+                    // Try common paths
+                    $commonPaths = [
+                        '/usr/bin/pdftotext',
+                        '/usr/local/bin/pdftotext',
+                        '/opt/plesk/php/8.3/bin/pdftotext',
+                        'pdftotext'
+                    ];
+                    
+                    $pdfToTextPath = null;
+                    foreach ($commonPaths as $path) {
+                        if ($path === 'pdftotext' || file_exists($path)) {
+                            $pdfToTextPath = $path;
+                            break;
+                        }
+                    }
+                }
+                
+                if ($pdfToTextPath) {
+                    try {
+                        $text = (new Pdf($pdfToTextPath))->setPdf($path)->text();
+                    } catch (\Exception $pdfError) {
+                        // If PDF extraction fails, fall back to OCR
+                        if ($debugMode) {
+                            Log::warning('PDF extraction failed, falling back to OCR', [
+                                'payslip_id' => $this->payslip->id,
+                                'pdf_error' => $pdfError->getMessage()
+                            ]);
+                        }
+                        $text = (new TesseractOCR($path))
+                            ->lang('eng+msa')
+                            ->configFile('bazaar')
+                            ->run();
+                    }
+                } else {
+                    // No pdftotext available, use OCR for PDF too
+                    if ($debugMode) {
+                        Log::info('pdftotext not available, using OCR for PDF', [
+                            'payslip_id' => $this->payslip->id
+                        ]);
+                    }
+                    $text = (new TesseractOCR($path))
+                        ->lang('eng+msa')
+                        ->configFile('bazaar')
+                        ->run();
+                }
             } else {
                 $text = (new TesseractOCR($path))
                     ->lang('eng+msa') // Add Malay language support

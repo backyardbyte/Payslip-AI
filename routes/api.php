@@ -15,7 +15,7 @@ Route::middleware(['web', 'auth'])->get('/user', function (Request $request) {
 });
 
 // Protected API routes
-Route::middleware(['web', 'auth', 'api.rate_limit'])->withoutMiddleware([\Illuminate\Foundation\Http\Middleware\ValidateCsrfToken::class])->group(function () {
+Route::middleware(['web', 'auth'])->withoutMiddleware([\Illuminate\Foundation\Http\Middleware\ValidateCsrfToken::class])->group(function () {
     // Payslip routes with rate limiting
     Route::post('/upload', [PayslipController::class, 'upload']);
     Route::get('/status/{payslip}', [PayslipController::class, 'status']);
