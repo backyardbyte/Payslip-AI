@@ -19,7 +19,6 @@ use TelegramBot\Api\Types\Update;
 use TelegramBot\Api\Types\Message;
 use TelegramBot\Api\Types\ReplyKeyboardMarkup;
 use TelegramBot\Api\Types\Inline\InlineKeyboardMarkup;
-use TelegramBot\Api\Types\Inline\InlineKeyboardButton;
 
 class TelegramBotService
 {
@@ -236,14 +235,9 @@ class TelegramBotService
             $telegramUser = $this->getOrCreateTelegramUser($user);
         }
 
-        // Check if this is a first-time user
-        $isNewUser = $telegramUser->created_at->diffInMinutes(now()) < 5;
-        
-        if ($isNewUser) {
-            $this->sendWelcomeSequence($chatId, $telegramUser);
-        } else {
-            $this->sendMainMenu($chatId, $telegramUser);
-        }
+        // Always show main menu instead of complex welcome sequence
+        // This prevents the looping issue
+        $this->sendMainMenu($chatId, $telegramUser);
 
         // Track user engagement
         $this->trackUserActivity($telegramUser, 'start_command');
@@ -254,19 +248,28 @@ class TelegramBotService
      */
     private function sendWelcomeSequence(int $chatId, $telegramUser): void
     {
-        $lang = $telegramUser->language ?? 'ms';
+        // Simplified welcome - just show language selection if user hasn't set language
+        $lang = $telegramUser->language ?? null;
         
-        // Welcome message
-        $text = $this->getLocalizedText($chatId, 'welcome.title') . "\n\n";
-        $text .= $this->getLocalizedText($chatId, 'welcome.description') . "\n\n";
-        $text .= $this->getLocalizedText($chatId, 'welcome.features') . "\n\n";
-        $text .= $this->getLocalizedText($chatId, 'welcome.get_started');
+        if (!$lang) {
+            // Only show language selection if language is not set
+            $text = $this->getLocalizedText($chatId, 'language.title') . "\n\n";
+            $text .= $this->getLocalizedText($chatId, 'language.choose');
 
-        $this->sendMessage($chatId, $text, 'Markdown');
+            $buttons = [];
+            foreach ($this->languages as $code => $name) {
+                $buttons[] = [[
+                    'text' => $name,
+                    'callback_data' => "language_$code"
+                ]];
+            }
 
-        // Language selection for new users
-        sleep(1);
-        $this->handleLanguageCommand($this->createMockMessage($chatId), $telegramUser);
+            $keyboard = new InlineKeyboardMarkup($buttons);
+            $this->sendMessage($chatId, $text, 'Markdown', false, null, $keyboard);
+        } else {
+            // User already has language set, show main menu
+            $this->sendMainMenu($chatId, $telegramUser);
+        }
     }
 
     /**
@@ -274,8 +277,16 @@ class TelegramBotService
      */
     private function sendMainMenu(int $chatId, $telegramUser): void
     {
-        $text = $this->getLocalizedText($chatId, 'menu.welcome', ['name' => $telegramUser->first_name]);
-        $text .= "\n\n" . $this->getLocalizedText($chatId, 'menu.instructions');
+        // First check if user has language set, if not show language selection
+        $lang = $telegramUser->language ?? null;
+        if (!$lang) {
+            $this->sendWelcomeSequence($chatId, $telegramUser);
+            return;
+        }
+
+        $text = $this->getLocalizedText($chatId, 'welcome.title') . "\n\n";
+        $text .= $this->getLocalizedText($chatId, 'welcome.description') . "\n\n";
+        $text .= $this->getLocalizedText($chatId, 'menu.instructions');
 
         $keyboard = $this->createMainKeyboard($chatId);
         $this->sendMessage($chatId, $text, 'Markdown', false, null, $keyboard);
@@ -329,9 +340,10 @@ class TelegramBotService
 
         // Create inline keyboard with quick actions
         $keyboard = new InlineKeyboardMarkup([
-            [
-                new InlineKeyboardButton($this->getLocalizedText($chatId, 'button.cancel'), null, 'cancel_scan')
-            ]
+            [[
+                'text' => $this->getLocalizedText($chatId, 'button.cancel'),
+                'callback_data' => 'cancel_scan'
+            ]]
         ]);
 
         $this->sendMessage($chatId, $text, 'Markdown', false, null, $keyboard);
@@ -359,15 +371,15 @@ class TelegramBotService
 
         $keyboard = new InlineKeyboardMarkup([
             [
-                new InlineKeyboardButton($this->getLocalizedText($chatId, 'button.change_language'), null, 'settings_language'),
-                new InlineKeyboardButton($this->getLocalizedText($chatId, 'button.notifications'), null, 'settings_notifications')
+                ['text' => $this->getLocalizedText($chatId, 'button.change_language'), 'callback_data' => 'settings_language'],
+                ['text' => $this->getLocalizedText($chatId, 'button.notifications'), 'callback_data' => 'settings_notifications']
             ],
             [
-                new InlineKeyboardButton($this->getLocalizedText($chatId, 'button.delete_data'), null, 'settings_delete_data'),
-                new InlineKeyboardButton($this->getLocalizedText($chatId, 'button.export_data'), null, 'settings_export_data')
+                ['text' => $this->getLocalizedText($chatId, 'button.delete_data'), 'callback_data' => 'settings_delete_data'],
+                ['text' => $this->getLocalizedText($chatId, 'button.export_data'), 'callback_data' => 'settings_export_data']
             ],
             [
-                new InlineKeyboardButton($this->getLocalizedText($chatId, 'button.back_to_menu'), null, 'back_to_menu')
+                ['text' => $this->getLocalizedText($chatId, 'button.back_to_menu'), 'callback_data' => 'back_to_menu']
             ]
         ]);
 
@@ -390,13 +402,15 @@ class TelegramBotService
 
         $buttons = [];
         foreach ($this->languages as $code => $name) {
-            $buttons[] = [new InlineKeyboardButton(
-                ($telegramUser->language === $code ? '✅ ' : '') . $name,
-                null,
-                "language_$code"
-            )];
+            $buttons[] = [[
+                'text' => ($telegramUser->language === $code ? '✅ ' : '') . $name,
+                'callback_data' => "language_$code"
+            ]];
         }
-        $buttons[] = [new InlineKeyboardButton($this->getLocalizedText($chatId, 'button.cancel'), null, 'cancel_language')];
+        $buttons[] = [[
+            'text' => $this->getLocalizedText($chatId, 'button.cancel'),
+            'callback_data' => 'cancel_language'
+        ]];
 
         $keyboard = new InlineKeyboardMarkup($buttons);
         $this->sendMessage($chatId, $text, 'Markdown', false, null, $keyboard);
@@ -456,13 +470,10 @@ class TelegramBotService
                 $gajiBersih = $data['gaji_bersih'] ?? 0;
                 $text .= "💰 " . $this->getLocalizedText($chatId, 'history.salary', ['amount' => number_format($gajiBersih, 2)]) . "\n";
                 
-                $inlineKeyboard[] = [
-                    new InlineKeyboardButton(
-                        $this->getLocalizedText($chatId, 'button.view_details', ['id' => $payslip->id]),
-                        null,
-                        "view_eligibility_{$payslip->id}"
-                    )
-                ];
+                $inlineKeyboard[] = [[
+                    'text' => $this->getLocalizedText($chatId, 'button.view_details', ['id' => $payslip->id]),
+                    'callback_data' => "view_eligibility_{$payslip->id}"
+                ]];
             }
             $text .= "\n";
         }
@@ -470,10 +481,16 @@ class TelegramBotService
         // Add navigation buttons
         $navButtons = [];
         if ($page > 1) {
-            $navButtons[] = new InlineKeyboardButton('◀️ ' . $this->getLocalizedText($chatId, 'button.previous'), null, "history_" . ($page - 1));
+            $navButtons[] = [
+                'text' => '◀️ ' . $this->getLocalizedText($chatId, 'button.previous'),
+                'callback_data' => "history_" . ($page - 1)
+            ];
         }
         if ($hasMore) {
-            $navButtons[] = new InlineKeyboardButton($this->getLocalizedText($chatId, 'button.next') . ' ▶️', null, "history_" . ($page + 1));
+            $navButtons[] = [
+                'text' => $this->getLocalizedText($chatId, 'button.next') . ' ▶️',
+                'callback_data' => "history_" . ($page + 1)
+            ];
         }
         
         if (!empty($navButtons)) {
@@ -522,15 +539,15 @@ class TelegramBotService
 
         $keyboard = new InlineKeyboardMarkup([
             [
-                new InlineKeyboardButton('📊 Detailed Stats', null, 'admin_stats'),
-                new InlineKeyboardButton('👥 User Management', null, 'admin_users')
+                ['text' => '📊 Detailed Stats', 'callback_data' => 'admin_stats'],
+                ['text' => '👥 User Management', 'callback_data' => 'admin_users']
             ],
             [
-                new InlineKeyboardButton('📢 Broadcast Message', null, 'admin_broadcast'),
-                new InlineKeyboardButton('🔄 System Health', null, 'admin_health')
+                ['text' => '📢 Broadcast Message', 'callback_data' => 'admin_broadcast'],
+                ['text' => '🔄 System Health', 'callback_data' => 'admin_health']
             ],
             [
-                new InlineKeyboardButton('🏠 Back to Menu', null, 'back_to_menu')
+                ['text' => '🏠 Back to Menu', 'callback_data' => 'back_to_menu']
             ]
         ]);
 
@@ -559,8 +576,20 @@ class TelegramBotService
             }
             elseif (str_starts_with($data, 'language_')) {
                 $language = str_replace('language_', '', $data);
-                $this->setUserLanguage($telegramUser, $language);
-                $this->sendMessage($chatId, $this->getLocalizedText($chatId, 'language.changed', ['language' => $this->languages[$language]]));
+                if (isset($this->languages[$language])) {
+                    // Update user language
+                    $this->setUserLanguage($telegramUser, $language);
+                    
+                    // Get updated user data
+                    $telegramUser = $this->getTelegramUserByChatId($chatId);
+                    
+                    // Send confirmation and main menu
+                    $this->sendMessage($chatId, "✅ Language changed to " . $this->languages[$language]);
+                    $this->sendMainMenu($chatId, $telegramUser);
+                }
+            }
+            elseif ($data === 'cancel_language') {
+                $this->sendMessage($chatId, "❌ Language selection cancelled.");
                 $this->sendMainMenu($chatId, $telegramUser);
             }
             elseif (str_starts_with($data, 'settings_')) {
@@ -604,7 +633,10 @@ class TelegramBotService
                 break;
                 
             case self::STATE_FEEDBACK:
-                $this->processFeedback($chatId, $text, $telegramUser);
+                // Process feedback - not implemented yet
+                $this->sendMessage($chatId, "💬 Thank you for your feedback!");
+                $this->setConversationState($chatId, self::STATE_NONE);
+                $this->sendMainMenu($chatId, $telegramUser);
                 break;
                 
             default:
@@ -696,10 +728,42 @@ class TelegramBotService
                 'scan.supported_formats' => "📋 *Format yang disokong:*\n• PDF (disyorkan)\n• JPG, PNG, JPEG\n• Maksimum: 20MB",
                 'scan.tips' => "💡 *Tips untuk hasil terbaik:*\n• Pastikan teks jelas dan tidak kabur\n• Gunakan pencahayaan yang baik\n• Pastikan semua maklumat kelihatan",
                 'scan.send_file' => '📤 Hantar fail anda sekarang...',
+                'scan.waiting_file' => '⏳ Saya sedang menunggu slip gaji anda. Sila hantar fail atau gunakan /cancel untuk batal.',
+                'scan.processing' => '⚙️ Sedang memproses slip gaji anda... Ini mungkin mengambil masa beberapa minit.',
+                'scan.success' => '✅ Slip gaji anda telah berjaya diproses!',
+                'scan.failed' => '❌ Maaf, gagal memproses slip gaji anda. Sila cuba lagi atau hubungi sokongan.',
+                'scan.cancelled' => '❌ Imbasan dibatalkan. Kembali ke menu utama.',
+                'button.cancel' => '❌ Batal',
+                'button.previous' => 'Sebelumnya',
+                'button.next' => 'Seterusnya',
+                'button.view_details' => '👁️ Lihat Butiran ID: {id}',
+                'language.changed' => '✅ Bahasa telah ditukar kepada {language}',
+                'history.salary' => 'Gaji Bersih: RM {amount}',
                 'error.general' => '❌ Maaf, terdapat ralat. Sila cuba lagi.',
                 'error.rate_limit' => '⏰ Anda menghantar mesej terlalu cepat. Sila tunggu sebentar.',
                 'error.unknown_command' => '🤔 Saya tidak faham arahan tersebut.',
+                'error.user_not_found' => '👤 Pengguna tidak dijumpai. Sila gunakan /start dahulu.',
+                'error.admin_only' => '🔐 Arahan ini hanya untuk pentadbir.',
+                'error.callback' => '❌ Ralat memproses permintaan. Sila cuba lagi.',
                 'help.use_menu' => 'Sila gunakan butang menu di bawah atau arahan yang tersedia.',
+                'settings.title' => '⚙️ *Tetapan Akaun*',
+                'settings.current_language' => '🌍 Bahasa semasa: {language}',
+                'settings.notifications' => '🔔 Pemberitahuan: {status}',
+                'settings.choose_option' => 'Pilih tetapan yang ingin anda ubah:',
+                'language.title' => '🌍 *Pilih Bahasa*',
+                'language.choose' => 'Pilih bahasa pilihan anda:',
+                'button.change_language' => '🌍 Tukar Bahasa',
+                'button.notifications' => '🔔 Pemberitahuan',
+                'button.delete_data' => '🗑️ Padam Data',
+                'button.export_data' => '📤 Eksport Data',
+                'button.back_to_menu' => '🏠 Kembali ke Menu',
+                'history.title' => '📚 *Sejarah Slip Gaji* (Halaman {page})',
+                'history.empty' => '📚 Tiada sejarah slip gaji dijumpai.',
+                'history.start_scanning' => 'Gunakan /scan untuk mula mengimbas slip gaji anda!',
+                'status.uploaded' => 'Dimuat naik',
+                'status.processing' => 'Sedang diproses',
+                'status.completed' => 'Selesai',
+                'status.failed' => 'Gagal',
             ],
             'en' => [
                 'welcome.title' => '🏦 *Welcome to Payslip AI!*',
@@ -719,10 +783,42 @@ class TelegramBotService
                 'scan.supported_formats' => "📋 *Supported formats:*\n• PDF (recommended)\n• JPG, PNG, JPEG\n• Maximum: 20MB",
                 'scan.tips' => "💡 *Tips for best results:*\n• Ensure text is clear and not blurry\n• Use good lighting\n• Make sure all information is visible",
                 'scan.send_file' => '📤 Send your file now...',
+                'scan.waiting_file' => '⏳ I\'m waiting for your payslip file. Please send a file or use /cancel to abort.',
+                'scan.processing' => '⚙️ Processing your payslip... This may take a few minutes.',
+                'scan.success' => '✅ Your payslip has been processed successfully!',
+                'scan.failed' => '❌ Sorry, failed to process your payslip. Please try again or contact support.',
+                'scan.cancelled' => '❌ Scan cancelled. Returning to main menu.',
+                'button.cancel' => '❌ Cancel',
+                'button.previous' => 'Previous',
+                'button.next' => 'Next',
+                'button.view_details' => '👁️ View Details ID: {id}',
+                'language.changed' => '✅ Language changed to {language}',
+                'history.salary' => 'Net Salary: RM {amount}',
                 'error.general' => '❌ Sorry, there was an error. Please try again.',
                 'error.rate_limit' => '⏰ You are sending messages too fast. Please wait a moment.',
                 'error.unknown_command' => '🤔 I don\'t understand that command.',
+                'error.user_not_found' => '👤 User not found. Please use /start first.',
+                'error.admin_only' => '🔐 This command is for administrators only.',
+                'error.callback' => '❌ Error processing request. Please try again.',
                 'help.use_menu' => 'Please use the menu buttons below or available commands.',
+                'settings.title' => '⚙️ *Account Settings*',
+                'settings.current_language' => '🌍 Current language: {language}',
+                'settings.notifications' => '🔔 Notifications: {status}',
+                'settings.choose_option' => 'Choose the setting you want to change:',
+                'language.title' => '🌍 *Select Language*',
+                'language.choose' => 'Choose your preferred language:',
+                'button.change_language' => '🌍 Change Language',
+                'button.notifications' => '🔔 Notifications',
+                'button.delete_data' => '🗑️ Delete Data',
+                'button.export_data' => '📤 Export Data',
+                'button.back_to_menu' => '🏠 Back to Menu',
+                'history.title' => '📚 *Payslip History* (Page {page})',
+                'history.empty' => '📚 No payslip history found.',
+                'history.start_scanning' => 'Use /scan to start scanning your payslips!',
+                'status.uploaded' => 'Uploaded',
+                'status.processing' => 'Processing',
+                'status.completed' => 'Completed',
+                'status.failed' => 'Failed',
             ]
         ];
 
@@ -768,18 +864,42 @@ class TelegramBotService
      */
     private function getOrCreateTelegramUser($telegramUserData): object
     {
-        // For now, return a simple object. This would integrate with TelegramUser model
-        return (object)[
-            'id' => $telegramUserData->getId(),
-            'telegram_id' => $telegramUserData->getId(),
-            'username' => $telegramUserData->getUsername(),
-            'first_name' => $telegramUserData->getFirstName(),
-            'last_name' => $telegramUserData->getLastName(),
-            'language' => 'ms',
-            'notifications_enabled' => true,
-            'created_at' => now(),
-            'user_id' => null,
-        ];
+        $telegramId = $telegramUserData->getId();
+        
+        // Try to get existing user data from cache
+        $cacheKey = "telegram_user_{$telegramId}";
+        $userData = Cache::get($cacheKey);
+        
+        if (!$userData) {
+            // Map user's language code to our supported languages
+            $userLang = $telegramUserData->getLanguageCode();
+            $defaultLang = 'ms'; // Default to Malay
+            
+            if (in_array($userLang, ['en', 'ms', 'zh'])) {
+                $defaultLang = $userLang;
+            } elseif (str_starts_with($userLang, 'en')) {
+                $defaultLang = 'en';
+            } elseif (str_starts_with($userLang, 'zh')) {
+                $defaultLang = 'zh';
+            }
+            
+            $userData = [
+                'id' => $telegramId,
+                'telegram_id' => $telegramId,
+                'username' => $telegramUserData->getUsername(),
+                'first_name' => $telegramUserData->getFirstName(),
+                'last_name' => $telegramUserData->getLastName(),
+                'language' => $defaultLang,
+                'notifications_enabled' => true,
+                'created_at' => now(),
+                'user_id' => null,
+            ];
+            
+            // Cache for 24 hours
+            Cache::put($cacheKey, $userData, 86400);
+        }
+        
+        return (object) $userData;
     }
 
     /**
@@ -787,8 +907,16 @@ class TelegramBotService
      */
     private function getTelegramUserByChatId(int $chatId): ?object
     {
-        // Simplified implementation
+        $cacheKey = "telegram_user_{$chatId}";
+        $userData = Cache::get($cacheKey);
+        
+        if ($userData) {
+            return (object) $userData;
+        }
+        
+        // Return default if not found
         return (object)[
+            'id' => $chatId,
             'language' => 'ms',
             'notifications_enabled' => true,
         ];
@@ -843,6 +971,16 @@ class TelegramBotService
     private function setUserLanguage($telegramUser, string $language): void
     {
         if (isset($this->languages[$language])) {
+            // Update the main user cache with new language
+            $cacheKey = "telegram_user_{$telegramUser->id}";
+            $userData = Cache::get($cacheKey, []);
+            
+            if (is_array($userData)) {
+                $userData['language'] = $language;
+                Cache::put($cacheKey, $userData, 86400);
+            }
+            
+            // Also update the separate language cache for backward compatibility
             Cache::put("telegram_user_lang_{$telegramUser->id}", $language, 86400);
         }
     }

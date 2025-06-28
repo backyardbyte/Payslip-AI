@@ -3,6 +3,7 @@
 namespace App\Console\Commands;
 
 use App\Services\TelegramBotService;
+use App\Services\SimpleTelegramBotService;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Log;
 
@@ -13,7 +14,7 @@ class TelegramBotCommand extends Command
      *
      * @var string
      */
-    protected $signature = 'telegram:bot {action=run : The action to perform (run, setup, webhook)}';
+    protected $signature = 'telegram:bot {action=run : The action to perform (run, setup, webhook)} {--simple : Use simple bot service}';
 
     /**
      * The console command description.
@@ -28,13 +29,19 @@ class TelegramBotCommand extends Command
     public function handle()
     {
         $action = $this->argument('action');
+        $useSimple = $this->option('simple') || env('TELEGRAM_USE_SIMPLE_BOT', false);
 
         try {
-            $botService = new TelegramBotService();
+            if ($useSimple) {
+                $this->info('Using simplified Telegram bot service...');
+                $botService = new SimpleTelegramBotService();
+            } else {
+                $botService = new TelegramBotService();
+            }
 
             switch ($action) {
                 case 'run':
-                    $this->runBot($botService);
+                    $this->runBot($botService, $useSimple);
                     break;
                 case 'setup':
                     $this->setupBot($botService);
@@ -68,19 +75,22 @@ class TelegramBotCommand extends Command
     /**
      * Run the bot using polling
      */
-    private function runBot(TelegramBotService $botService): void
+    private function runBot($botService, bool $isSimple = false): void
     {
         $this->info('Starting Telegram bot with polling...');
         $this->info('Press Ctrl+C to stop');
 
-        $botService->setupBot();
+        if (!$isSimple && method_exists($botService, 'setupBot')) {
+            $botService->setupBot();
+        }
+        
         $botService->run();
     }
 
     /**
      * Set up bot commands
      */
-    private function setupBot(TelegramBotService $botService): void
+    private function setupBot($botService): void
     {
         $this->info('Setting up Telegram bot commands...');
         
@@ -91,7 +101,7 @@ class TelegramBotCommand extends Command
     /**
      * Set up webhook
      */
-    private function setupWebhook(TelegramBotService $botService): void
+    private function setupWebhook($botService): void
     {
         $webhookUrl = config('services.telegram.webhook_url');
         

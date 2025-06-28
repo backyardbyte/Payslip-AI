@@ -4,7 +4,6 @@ namespace App\Jobs;
 
 use App\Models\Koperasi;
 use App\Models\Payslip;
-use App\Services\TelegramBotService;
 use App\Services\SettingsService;
 use App\Services\PayslipProcessingService;
 use Illuminate\Bus\Queueable;
@@ -812,7 +811,8 @@ class ProcessPayslip implements ShouldQueue
         }
 
         try {
-            $telegramService = new TelegramBotService();
+            // Use SimpleTelegramBotService for notifications
+            $telegramService = new \App\Services\SimpleTelegramBotService();
             
             // Format eligibility results for Telegram
             $eligibilityResults = [];

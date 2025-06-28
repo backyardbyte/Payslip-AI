@@ -105,7 +105,7 @@ function runContinuousPolling($phpBinary, $logFile, $telegramTimeout, $maxRestar
         // Set execution time limit for this cycle only
         set_time_limit($telegramTimeout + 60); // Add buffer time
         
-        $command = $phpBinary . ' artisan telegram:bot run';
+        $command = $phpBinary . ' artisan telegram:bot run --simple';
         
         // Execute command
         $output = [];
@@ -179,7 +179,7 @@ switch ($action) {
     case 'poll-once':
         // Single poll cycle (original behavior)
         set_time_limit($telegramTimeout);
-        $command = $phpBinary . ' artisan telegram:bot run';
+        $command = $phpBinary . ' artisan telegram:bot run --simple';
         echo "Running single Telegram bot polling cycle...\n";
         break;
         
