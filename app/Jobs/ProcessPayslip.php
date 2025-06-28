@@ -611,16 +611,6 @@ class ProcessPayslip implements ShouldQueue
             throw new \Exception('OCR.space API key not configured. Please configure it in settings or .env file');
         }
         
-        // Validate API key format - OCR.space keys are typically 32+ characters
-        if (strlen($apiKey) < 20) {
-            Log::warning('OCR.space API key appears to be invalid (too short)', [
-                'payslip_id' => $this->payslip->id,
-                'key_length' => strlen($apiKey),
-                'key_preview' => substr($apiKey, 0, 5) . '...'
-            ]);
-            throw new \Exception('OCR.space API key appears to be invalid. Please check your API key configuration. Expected format: 32+ character string from https://ocr.space/ocrapi');
-        }
-        
         $settingsService = app(SettingsService::class);
         $debugMode = $settingsService->get('advanced.enable_debug_mode', false);
         
