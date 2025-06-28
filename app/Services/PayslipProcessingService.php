@@ -822,7 +822,8 @@ class PayslipProcessingService
     private function performOCRSpace(string $filePath): string
     {
         // Basic OCR.space implementation
-        $apiKey = $this->settingsService->get('ocr.ocrspace_api_key');
+        $settingsApiKey = $this->settingsService->get('ocr.ocrspace_api_key');
+        $apiKey = !empty($settingsApiKey) ? $settingsApiKey : env('OCRSPACE_API_KEY');
         
         if (!$apiKey) {
             throw new \Exception('OCR.space API key not configured');

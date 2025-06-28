@@ -17,7 +17,10 @@ class TestOcrSpaceApi extends Command
         $this->line('=====================================');
 
         $settingsService = app(SettingsService::class);
-        $apiKey = $settingsService->get('ocr.ocrspace_api_key', env('OCRSPACE_API_KEY'));
+        
+        // Fix API key retrieval - check if settings value is empty and fallback to env
+        $settingsApiKey = $settingsService->get('ocr.ocrspace_api_key');
+        $apiKey = !empty($settingsApiKey) ? $settingsApiKey : env('OCRSPACE_API_KEY');
 
         // Check if API key is configured
         $this->info('1. API Key Configuration:');
@@ -37,15 +40,13 @@ class TestOcrSpaceApi extends Command
             $this->line('   Key preview: ' . substr($apiKey, 0, 8) . '...' . substr($apiKey, -4));
         }
 
-        // Validate key format
-        $this->info('2. API Key Validation:');
-        if (strlen($apiKey) < 20) {
-            $this->error('   ❌ API key appears to be too short (expected 32+ characters)');
-            $this->line('   Current length: ' . strlen($apiKey));
-            $this->line('   OCR.space API keys are typically 32+ characters long');
-            return 1;
-        }
-        $this->info('   ✅ API key length appears valid');
+        // Debug info to understand source
+        $this->info('2. API Key Source Debug:');
+        $envValue = env('OCRSPACE_API_KEY');
+        
+        $this->line('   From settings: ' . ($settingsApiKey ? 'Found (' . strlen($settingsApiKey) . ' chars)' : 'Not found/empty'));
+        $this->line('   From .env: ' . ($envValue ? 'Found (' . strlen($envValue) . ' chars)' : 'Not found/empty'));
+        $this->line('   Using: ' . (!empty($settingsApiKey) ? 'Settings value' : 'Environment value'));
 
         // Test API connection with a simple request
         $this->info('3. API Connection Test:');

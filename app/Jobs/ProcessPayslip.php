@@ -606,12 +606,24 @@ class ProcessPayslip implements ShouldQueue
     private function performOCRSpace(string $filePath): string
     {
         $settingsService = app(SettingsService::class);
-        $apiKey = $settingsService->get('ocr.ocrspace_api_key', env('OCRSPACE_API_KEY'));
+        
+        // Fix API key retrieval - check if settings value is empty and fallback to env
+        $settingsApiKey = $settingsService->get('ocr.ocrspace_api_key');
+        $apiKey = !empty($settingsApiKey) ? $settingsApiKey : env('OCRSPACE_API_KEY');
+        
         if (!$apiKey) {
             throw new \Exception('OCR.space API key not configured. Please configure it in settings or .env file');
         }
         
-        $settingsService = app(SettingsService::class);
+        // Log debug info to understand the source
+        Log::info('OCR API key source debug', [
+            'payslip_id' => $this->payslip->id,
+            'settings_value' => $settingsApiKey ? 'Found (' . strlen($settingsApiKey) . ' chars)' : 'Empty/null',
+            'env_value' => env('OCRSPACE_API_KEY') ? 'Found (' . strlen(env('OCRSPACE_API_KEY')) . ' chars)' : 'Empty/null',
+            'using_source' => !empty($settingsApiKey) ? 'Settings' : 'Environment',
+            'final_key_length' => strlen($apiKey)
+        ]);
+        
         $debugMode = $settingsService->get('advanced.enable_debug_mode', false);
         
         try {
