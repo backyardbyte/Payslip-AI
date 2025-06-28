@@ -277,8 +277,8 @@ class SettingsSeeder extends Seeder
             ],
             [
                 'key' => 'ocr.api_timeout',
-                'display_name' => 'OCR API Timeout',
-                'description' => 'Timeout for OCR API requests (seconds)',
+                'display_name' => 'OCR API Timeout (seconds)',
+                'description' => 'Maximum time to wait for OCR.space API response',
                 'category' => 'ocr',
                 'type' => 'integer',
                 'default_value' => '120',

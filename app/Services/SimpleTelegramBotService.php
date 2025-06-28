@@ -38,20 +38,35 @@ class SimpleTelegramBotService
     {
         Log::info('Starting simple Telegram bot...');
         
+        $consecutiveErrors = 0;
+        $maxErrors = 5;
+        
         while (true) {
             try {
-                $updates = $this->bot->getUpdates($this->lastUpdateId + 1, 100, 30);
+                $updates = $this->bot->getUpdates($this->lastUpdateId + 1, 100, 10); // Increased timeout to 10 seconds
                 
                 foreach ($updates as $update) {
                     $this->processUpdate($update);
                     $this->lastUpdateId = $update->getUpdateId();
                 }
                 
-                usleep(100000); // 100ms delay
+                // Reset error counter on successful polling
+                $consecutiveErrors = 0;
+                usleep(500000); // 500ms delay between polls
                 
             } catch (\Exception $e) {
+                $consecutiveErrors++;
                 Log::error("Bot error: " . $e->getMessage());
-                sleep(5); // Wait 5 seconds on error
+                
+                if ($consecutiveErrors >= $maxErrors) {
+                    Log::critical("Too many consecutive errors in Telegram bot, stopping...");
+                    break;
+                }
+                
+                // Exponential backoff
+                $backoffTime = min(30, pow(2, $consecutiveErrors));
+                Log::info("Backing off for {$backoffTime} seconds after error #{$consecutiveErrors}");
+                sleep($backoffTime);
             }
         }
     }

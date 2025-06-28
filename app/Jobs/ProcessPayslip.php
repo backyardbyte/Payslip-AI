@@ -611,6 +611,16 @@ class ProcessPayslip implements ShouldQueue
             throw new \Exception('OCR.space API key not configured. Please configure it in settings or .env file');
         }
         
+        // Validate API key format - OCR.space keys are typically 32+ characters
+        if (strlen($apiKey) < 20) {
+            Log::warning('OCR.space API key appears to be invalid (too short)', [
+                'payslip_id' => $this->payslip->id,
+                'key_length' => strlen($apiKey),
+                'key_preview' => substr($apiKey, 0, 5) . '...'
+            ]);
+            throw new \Exception('OCR.space API key appears to be invalid. Please check your API key configuration. Expected format: 32+ character string from https://ocr.space/ocrapi');
+        }
+        
         $settingsService = app(SettingsService::class);
         $debugMode = $settingsService->get('advanced.enable_debug_mode', false);
         
@@ -626,12 +636,12 @@ class ProcessPayslip implements ShouldQueue
             $postData = [
                 'apikey' => $apiKey,
                 'base64Image' => 'data:' . $mimeType . ';base64,' . $base64,
-                'language' => 'eng,msa', // English and Malay
-                'isOverlayRequired' => false,
-                'detectOrientation' => true,
-                'scale' => true,
-                'OCREngine' => 2, // OCR Engine 2 is better for mixed languages
-                'isTable' => true, // Better for structured documents like payslips
+                'language' => 'eng', // Start with English only, add Malay later if needed
+                'isOverlayRequired' => 'false',
+                'detectOrientation' => 'true',
+                'scale' => 'true',
+                'OCREngine' => '2', // OCR Engine 2 is better for mixed languages
+                'isTable' => 'true', // Better for structured documents like payslips
             ];
             
             if ($debugMode) {
@@ -650,7 +660,10 @@ class ProcessPayslip implements ShouldQueue
             curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
             $ocrTimeout = $settingsService->get('ocr.api_timeout', 120); // Configurable timeout
             curl_setopt($ch, CURLOPT_TIMEOUT, $ocrTimeout);
+            curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 30); // Connection timeout
             curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+            curl_setopt($ch, CURLOPT_USERAGENT, 'Payslip-AI/1.0'); // User agent
+            curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true); // Follow redirects
             
             $response = curl_exec($ch);
             $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
