@@ -171,6 +171,9 @@ class PayslipProcessingService
         // Look for the summary section pattern common in Malaysian payslips
         $lines = explode("\n", $text);
         
+        // Also create a version without line breaks for cross-line matching
+        $textNoBreaks = preg_replace('/\s+/', ' ', $text);
+        
         // Handle the grouped summary format: 
         // Field names listed together, then colons together, then values together
         for ($i = 0; $i < count($lines); $i++) {
@@ -370,6 +373,31 @@ class PayslipProcessingService
             }
         }
         
+        // Final attempt: Look for patterns in the complete text without line breaks
+        if ($data['peratus_gaji_bersih'] === null) {
+            // Pattern for percentage that might be across lines
+            if (preg_match('/%\s*peratus\s+gaji\s+bersih\s*:?\s*([\d,]+\.?\d*)/i', $textNoBreaks, $matches)) {
+                $value = (float) str_replace(',', '', $matches[1]);
+                if ($value >= 0 && $value <= 100) {
+                    $data['peratus_gaji_bersih'] = $value;
+                }
+            }
+        }
+        
+        // Look for the specific Malaysian government payslip format in the summary
+        // This often appears at the bottom with specific formatting
+        if (preg_match('/pendapatan\s+bercukai\s*:\s*([\d,]+\.\d{2})\s+gaji\s+bersih\s*:\s*([\d,]+\.\d{2})\s+%?\s*peratus\s+gaji\s+bersih\s*:\s*([\d,]+\.?\d*)/i', $textNoBreaks, $matches)) {
+            if ($data['gaji_bersih'] === null) {
+                $data['gaji_bersih'] = (float) str_replace(',', '', $matches[2]);
+            }
+            if ($data['peratus_gaji_bersih'] === null) {
+                $value = (float) str_replace(',', '', $matches[3]);
+                if ($value >= 0 && $value <= 100) {
+                    $data['peratus_gaji_bersih'] = $value;
+                }
+            }
+        }
+        
         return $data;
     }
 
@@ -511,6 +539,33 @@ class PayslipProcessingService
         // Ensure percentage is saved as a number (not currency formatted)
         if ($data['peratus_gaji_bersih'] !== null) {
             $data['peratus_gaji_bersih'] = (float) $data['peratus_gaji_bersih'];
+        }
+        
+        // Validate extracted data relationships
+        if ($data['jumlah_pendapatan'] !== null && $data['jumlah_potongan'] !== null) {
+            // Check if potongan is greater than pendapatan (likely extraction error)
+            if ($data['jumlah_potongan'] > $data['jumlah_pendapatan']) {
+                // Try swapping them - common OCR misread
+                $temp = $data['jumlah_pendapatan'];
+                $data['jumlah_pendapatan'] = $data['jumlah_potongan'];
+                $data['jumlah_potongan'] = $temp;
+                $data['debug_patterns'][] = "WARNING: Swapped pendapatan/potongan due to invalid values";
+            }
+        }
+        
+        // Validate gaji bersih makes sense
+        if ($data['gaji_bersih'] !== null && $data['gaji_pokok'] !== null) {
+            // Gaji bersih should typically be less than gaji pokok but more than 20% of it
+            $ratio = $data['gaji_bersih'] / $data['gaji_pokok'];
+            if ($ratio < 0.2 || $ratio > 1.5) {
+                $data['debug_patterns'][] = "WARNING: Gaji bersih/pokok ratio is suspicious: " . round($ratio * 100, 2) . "%";
+                // Try recalculating if we have percentage
+                if ($data['peratus_gaji_bersih'] !== null && $data['peratus_gaji_bersih'] > 20) {
+                    $recalculated = round(($data['peratus_gaji_bersih'] / 100) * $data['gaji_pokok'], 2);
+                    $data['gaji_bersih'] = $recalculated;
+                    $data['debug_patterns'][] = "Recalculated gaji_bersih using percentage";
+                }
+            }
         }
 
         return $data;
@@ -748,34 +803,39 @@ class PayslipProcessingService
             ],
             'peratus_gaji_bersih' => [
                 [
-                    'regex' => '/%\s*peratus\s+gaji\s+bersih\s*:\s*([\d,]+\.\d{2})/im',
+                    'regex' => '/%\s*peratus\s+gaji\s+bersih\s*:\s*([\d,]+\.?\d*)/im',
                     'description' => 'Percentage with % symbol from summary',
-                    'confidence_weight' => 0.9
+                    'confidence_weight' => 0.95
                 ],
                 [
-                    'regex' => '/peratus\s+gaji\s+bersih\s*:\s*([\d,]+\.\d{2})/im',
+                    'regex' => '/peratus\s+gaji\s+bersih\s*:\s*([\d,]+\.?\d*)/im',
                     'description' => 'Percentage without % symbol from summary',
                     'confidence_weight' => 0.9
                 ],
                 [
-                    'regex' => '/%\s*peratus\s+gaji\s+bersih\s+([\d,]+\.\d{2})/im',
+                    'regex' => '/gaji\s+bersih\s*:\s*[\d,]+\.\d{2}\s+%?\s*peratus\s+gaji\s+bersih\s*:\s*([\d,]+\.?\d*)/im',
+                    'description' => 'Percentage after gaji bersih in same line',
+                    'confidence_weight' => 0.95
+                ],
+                [
+                    'regex' => '/%\s*peratus\s+gaji\s+bersih\s+([\d,]+\.?\d*)/im',
                     'description' => 'Percentage with % symbol without colon',
                     'confidence_weight' => 0.8
                 ],
                 [
-                    'regex' => '/peratus\s+gaji\s+bersih\s+([\d,]+\.\d{2})/im',
+                    'regex' => '/peratus\s+gaji\s+bersih\s+([\d,]+\.?\d*)/im',
                     'description' => 'Percentage without colon or symbol',
                     'confidence_weight' => 0.8
                 ],
                 [
-                    'regex' => '/%\s*peratus\s+gaji\s+bersih\s*:\s*([\d,]+\.\d{1,2})\s*$/im',
-                    'description' => 'Percentage at end of line with 1-2 decimal places',
-                    'confidence_weight' => 0.9
+                    'regex' => '/peratus\s+gaji\s*\n?\s*bersih\s*:\s*([\d,]+\.?\d*)/im',
+                    'description' => 'Percentage with possible line break',
+                    'confidence_weight' => 0.85
                 ],
                 [
-                    'regex' => '/gaji\s+bersih\s*:\s*[\d,]+\.\d{2}.*?%\s*peratus\s+gaji\s+bersih\s*:\s*([\d,]+\.\d{2})/im',
-                    'description' => 'Percentage after gaji bersih in same context',
-                    'confidence_weight' => 0.9
+                    'regex' => '/\b(\d{2}\.\d{1,2})%?\s*$/m',
+                    'description' => 'Standalone percentage at end of line (fallback)',
+                    'confidence_weight' => 0.6
                 ]
             ]
         ];
@@ -908,16 +968,21 @@ class PayslipProcessingService
             // Determine file type
             $mimeType = mime_content_type($filePath);
             
-            // Prepare OCR.space API request
+            // Prepare OCR.space API request with enhanced settings
             $postData = [
                 'apikey' => $apiKey,
                 'base64Image' => 'data:' . $mimeType . ';base64,' . $base64,
-                'language' => 'eng', // Start with English only, add Malay later if needed
+                'language' => 'eng+msa', // English + Malay for Malaysian payslips
                 'isOverlayRequired' => 'false',
                 'detectOrientation' => 'true',
                 'scale' => 'true',
-                'OCREngine' => '2', // OCR Engine 2 is better for mixed languages
+                'OCREngine' => '1', // Engine 1 is more accurate for structured documents
                 'isTable' => 'true', // Better for structured documents like payslips
+                'filetype' => 'PDF', // Explicitly specify PDF
+                'isCreateSearchablePdf' => 'false',
+                'isSearchablePdfHideTextLayer' => 'false',
+                'detectCheckbox' => 'false',
+                'checkboxTemplate' => '0',
             ];
             
             // Make API request
@@ -982,6 +1047,52 @@ class PayslipProcessingService
                     'text_length' => strlen($extractedText),
                     'file_parse_status' => $result['ParsedResults'][0]['FileParseExitCode'] ?? 'unknown'
                 ]);
+            }
+            
+            // If extraction is too short, try OCR Engine 2 as fallback
+            if (strlen($extractedText) < 500 && $postData['OCREngine'] !== '2') {
+                Log::info('OCR text too short, trying Engine 2 as fallback', [
+                    'first_attempt_length' => strlen($extractedText)
+                ]);
+                
+                // Try again with Engine 2
+                $postData['OCREngine'] = '2';
+                
+                $ch2 = curl_init();
+                curl_setopt($ch2, CURLOPT_URL, 'https://api.ocr.space/parse/image');
+                curl_setopt($ch2, CURLOPT_POST, true);
+                curl_setopt($ch2, CURLOPT_POSTFIELDS, $postData);
+                curl_setopt($ch2, CURLOPT_RETURNTRANSFER, true);
+                curl_setopt($ch2, CURLOPT_TIMEOUT, $ocrTimeout);
+                curl_setopt($ch2, CURLOPT_CONNECTTIMEOUT, 30);
+                curl_setopt($ch2, CURLOPT_SSL_VERIFYPEER, false);
+                curl_setopt($ch2, CURLOPT_USERAGENT, 'Payslip-AI/1.0');
+                curl_setopt($ch2, CURLOPT_FOLLOWLOCATION, true);
+                
+                $response2 = curl_exec($ch2);
+                $httpCode2 = curl_getinfo($ch2, CURLINFO_HTTP_CODE);
+                curl_close($ch2);
+                
+                if ($httpCode2 === 200) {
+                    $result2 = json_decode($response2, true);
+                    if (isset($result2['ParsedResults'])) {
+                        $extractedText2 = '';
+                        foreach ($result2['ParsedResults'] as $parsedResult) {
+                            if (isset($parsedResult['ParsedText'])) {
+                                $extractedText2 .= $parsedResult['ParsedText'] . "\n";
+                            }
+                        }
+                        
+                        // Use Engine 2 result if it's longer
+                        if (strlen($extractedText2) > strlen($extractedText)) {
+                            Log::info('Using Engine 2 result (longer text)', [
+                                'engine1_length' => strlen($extractedText),
+                                'engine2_length' => strlen($extractedText2)
+                            ]);
+                            $extractedText = $extractedText2;
+                        }
+                    }
+                }
             }
             
             return trim($extractedText);

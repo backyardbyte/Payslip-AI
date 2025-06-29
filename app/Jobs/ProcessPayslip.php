@@ -115,16 +115,21 @@ class ProcessPayslip implements ShouldQueue
             // Determine file type
             $mimeType = mime_content_type($filePath);
             
-            // Prepare OCR.space API request
+            // Prepare OCR.space API request with enhanced settings
             $postData = [
                 'apikey' => $apiKey,
                 'base64Image' => 'data:' . $mimeType . ';base64,' . $base64,
-                'language' => 'eng', // Start with English only, add Malay later if needed
+                'language' => 'eng+msa', // English + Malay for Malaysian payslips
                 'isOverlayRequired' => 'false',
                 'detectOrientation' => 'true',
                 'scale' => 'true',
-                'OCREngine' => '2', // OCR Engine 2 is better for mixed languages
+                'OCREngine' => '1', // Engine 1 is more accurate for structured documents
                 'isTable' => 'true', // Better for structured documents like payslips
+                'filetype' => 'PDF', // Explicitly specify PDF
+                'isCreateSearchablePdf' => 'false',
+                'isSearchablePdfHideTextLayer' => 'false',
+                'detectCheckbox' => 'false',
+                'checkboxTemplate' => '0',
             ];
             
             if ($debugMode) {
