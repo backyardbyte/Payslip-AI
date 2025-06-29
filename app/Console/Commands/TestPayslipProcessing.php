@@ -38,10 +38,11 @@ class TestPayslipProcessing extends Command
         $this->info("File exists: " . (file_exists($path) ? 'Yes' : 'No'));
         
         if ($mime === 'application/pdf') {
-            $this->info("Testing PDF text extraction...");
+            $this->info("Testing OCR.space extraction on PDF...");
             try {
-                $text = (new Pdf('/usr/bin/pdftotext'))->setPdf($path)->text();
-                $this->info("✅ PDF extraction successful");
+                // Use OCR.space for PDF processing
+                $text = $this->performOCRSpace($path);
+                $this->info("✅ OCR.space extraction successful");
                 $this->info("Text length: " . strlen($text));
                 
                 // Show first few lines
@@ -52,12 +53,19 @@ class TestPayslipProcessing extends Command
                 }
                 
             } catch (\Exception $e) {
-                $this->error("❌ PDF extraction failed: " . $e->getMessage());
+                $this->error("❌ OCR.space extraction failed: " . $e->getMessage());
                 $text = '';
             }
         } else {
-            $this->warn("Non-PDF file - OCR would be needed");
-            $text = '';
+            $this->info("Testing OCR.space extraction on image file...");
+            try {
+                $text = $this->performOCRSpace($path);
+                $this->info("✅ OCR.space extraction successful");
+                $this->info("Text length: " . strlen($text));
+            } catch (\Exception $e) {
+                $this->error("❌ OCR.space extraction failed: " . $e->getMessage());
+                $text = '';
+            }
         }
         
         if (!empty($text)) {
@@ -99,5 +107,96 @@ class TestPayslipProcessing extends Command
         $this->info("Check the logs and database for results");
         
         return 0;
+    }
+    
+    /**
+     * Perform OCR using OCR.space API
+     */
+    private function performOCRSpace(string $filePath): string
+    {
+        // Get API key from environment
+        $apiKey = env('OCRSPACE_API_KEY');
+        
+        if (!$apiKey) {
+            throw new \Exception('OCR.space API key not configured. Please set OCRSPACE_API_KEY in your .env file');
+        }
+        
+        try {
+            // Read file and encode to base64
+            $fileData = file_get_contents($filePath);
+            $base64 = base64_encode($fileData);
+            
+            // Determine file type
+            $mimeType = mime_content_type($filePath);
+            
+            // Prepare OCR.space API request
+            $postData = [
+                'apikey' => $apiKey,
+                'base64Image' => 'data:' . $mimeType . ';base64,' . $base64,
+                'language' => 'eng',
+                'isOverlayRequired' => 'false',
+                'detectOrientation' => 'true',
+                'scale' => 'true',
+                'OCREngine' => '2',
+                'isTable' => 'true',
+            ];
+            
+            // Make API request
+            $ch = curl_init();
+            curl_setopt($ch, CURLOPT_URL, 'https://api.ocr.space/parse/image');
+            curl_setopt($ch, CURLOPT_POST, true);
+            curl_setopt($ch, CURLOPT_POSTFIELDS, $postData);
+            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+            curl_setopt($ch, CURLOPT_TIMEOUT, 120);
+            curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 30);
+            curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+            curl_setopt($ch, CURLOPT_USERAGENT, 'Payslip-AI/1.0');
+            curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
+            
+            $response = curl_exec($ch);
+            $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            $curlError = curl_error($ch);
+            curl_close($ch);
+            
+            if ($curlError) {
+                throw new \Exception('OCR.space API request failed: ' . $curlError);
+            }
+            
+            if ($httpCode !== 200) {
+                throw new \Exception('OCR.space API returned HTTP ' . $httpCode);
+            }
+            
+            $result = json_decode($response, true);
+            
+            if (!$result) {
+                throw new \Exception('Invalid OCR.space API response: Failed to decode JSON');
+            }
+            
+            if (!isset($result['ParsedResults'])) {
+                throw new \Exception('Invalid OCR.space API response: Missing ParsedResults');
+            }
+            
+            if (isset($result['ErrorMessage']) && !empty($result['ErrorMessage'])) {
+                $errorMsg = is_array($result['ErrorMessage']) ? implode(', ', $result['ErrorMessage']) : $result['ErrorMessage'];
+                throw new \Exception('OCR.space API error: ' . $errorMsg);
+            }
+            
+            if (isset($result['OCRExitCode']) && $result['OCRExitCode'] != 1) {
+                throw new \Exception('OCR.space API failed with exit code: ' . $result['OCRExitCode']);
+            }
+            
+            // Extract text from all parsed results
+            $extractedText = '';
+            foreach ($result['ParsedResults'] as $parsedResult) {
+                if (isset($parsedResult['ParsedText'])) {
+                    $extractedText .= $parsedResult['ParsedText'] . "\n";
+                }
+            }
+            
+            return trim($extractedText);
+            
+        } catch (\Exception $e) {
+            throw new \Exception('OCR.space processing failed: ' . $e->getMessage());
+        }
     }
 } 
