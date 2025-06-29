@@ -294,9 +294,23 @@ class PayslipProcessingService
                 continue;
             }
             
-            // Handle standalone percentage like: "% Peratus Gaji Bersih : 45.22"
-            if (preg_match('/%\s*peratus\s+gaji\s+bersih\s*:\s*([\d,]+\.\d{2})/i', $line, $matches)) {
+            // Handle side-by-side format specifically for Malaysian payslips: "Jumlah Potongan : 368.30 Gaji Bersih : 3,845.31"
+            if (preg_match('/jumlah\s+potongan\s*:\s*([\d,]+\.\d{2}).*?gaji\s+bersih\s*:\s*([\d,]+\.\d{2})/i', $line, $matches)) {
+                $data['jumlah_potongan'] = (float) str_replace(',', '', $matches[1]);
+                $data['gaji_bersih'] = (float) str_replace(',', '', $matches[2]);
+                continue;
+            }
+            
+            // Handle the percentage line that often comes after gaji bersih: "% Peratus Gaji Bersih : 91.26"
+            if (preg_match('/%\s*peratus\s+gaji\s+bersih\s*:\s*([\d,]+\.?\d*)/i', $line, $matches)) {
                 $data['peratus_gaji_bersih'] = (float) str_replace(',', '', $matches[1]);
+                continue;
+            }
+            
+            // Handle cases where percentage is on same line after gaji bersih
+            if (preg_match('/gaji\s+bersih\s*:\s*([\d,]+\.\d{2}).*?%\s*peratus\s+gaji\s+bersih\s*:\s*([\d,]+\.?\d*)/i', $line, $matches)) {
+                $data['gaji_bersih'] = (float) str_replace(',', '', $matches[1]);
+                $data['peratus_gaji_bersih'] = (float) str_replace(',', '', $matches[2]);
                 continue;
             }
             
@@ -336,9 +350,22 @@ class PayslipProcessingService
                 continue;
             }
             
-            // Extract % Peratus Gaji Bersih - be more specific
-            if (preg_match('/^%?\s*peratus\s+gaji\s+bersih\s*[:]*\s*([\d,]+\.\d{2})/i', $line, $matches)) {
-                $data['peratus_gaji_bersih'] = (float) str_replace(',', '', $matches[1]);
+            // Extract % Peratus Gaji Bersih - improved patterns for Malaysian format
+            if (preg_match('/^%?\s*peratus\s+gaji\s+bersih\s*[:]*\s*([\d,]+\.?\d*)/i', $line, $matches)) {
+                $value = (float) str_replace(',', '', $matches[1]);
+                // Validate percentage range (should be between 0-100)
+                if ($value >= 0 && $value <= 100) {
+                    $data['peratus_gaji_bersih'] = $value;
+                }
+                continue;
+            }
+            
+            // Alternative pattern for percentage without % symbol at start
+            if (preg_match('/peratus\s+gaji\s+bersih\s*[:]*\s*([\d,]+\.?\d*)\s*$/i', $line, $matches)) {
+                $value = (float) str_replace(',', '', $matches[1]);
+                if ($value >= 0 && $value <= 100) {
+                    $data['peratus_gaji_bersih'] = $value;
+                }
                 continue;
             }
         }
@@ -391,28 +418,8 @@ class PayslipProcessingService
         // Normalize text
         $cleanText = $this->normalizeText($text);
 
-        // First try the summary section extraction (more reliable for Malaysian payslips)
-        $summaryData = $this->extractSummarySection($text);
-        foreach ($summaryData as $field => $value) {
-            if ($value !== null) {
-                $data[$field] = $value;
-                $data['debug_patterns'][] = "{$field}: extracted from summary section";
-                $data['confidence_scores'][$field] = 95; // High confidence for summary section
-            }
-        }
-
-        // Extract Gaji Pokok from earnings section
-        $gajiPokok = $this->extractGajiPokok($text);
-        if ($gajiPokok !== null) {
-            $data['gaji_pokok'] = $gajiPokok;
-            $data['debug_patterns'][] = "gaji_pokok: extracted from earnings section";
-            $data['confidence_scores']['gaji_pokok'] = 90;
-        }
-
-        // Then extract each field using patterns for missing data
+        // First extract each field using patterns to get all available data
         foreach ($this->extractionPatterns as $field => $patterns) {
-            if ($data[$field] !== null) continue; // Skip if already extracted from summary
-            
             foreach ($patterns as $pattern) {
                 try {
                     if (preg_match($pattern['regex'], $cleanText, $matches)) {
@@ -431,6 +438,26 @@ class PayslipProcessingService
                     ]);
                     $data['debug_patterns'][] = "{$field}: pattern failed - {$e->getMessage()}";
                 }
+            }
+        }
+
+        // Then try the summary section extraction (HIGHEST PRIORITY - overwrites pattern matches)
+        $summaryData = $this->extractSummarySection($text);
+        foreach ($summaryData as $field => $value) {
+            if ($value !== null) {
+                $data[$field] = $value;
+                $data['debug_patterns'][] = "{$field}: extracted from summary section (PRIORITY)";
+                $data['confidence_scores'][$field] = 95; // High confidence for summary section
+            }
+        }
+
+        // Extract Gaji Pokok from earnings section (if not found in summary)
+        if ($data['gaji_pokok'] === null) {
+            $gajiPokok = $this->extractGajiPokok($text);
+            if ($gajiPokok !== null) {
+                $data['gaji_pokok'] = $gajiPokok;
+                $data['debug_patterns'][] = "gaji_pokok: extracted from earnings section";
+                $data['confidence_scores']['gaji_pokok'] = 90;
             }
         }
 
@@ -457,16 +484,33 @@ class PayslipProcessingService
             }
         }
 
-        // Alternative: If we have percentage and gaji_pokok, calculate gaji_bersih
+        // Alternative: If we have percentage and gaji_pokok, calculate gaji_bersih (only if not directly extracted)
         if ($data['gaji_bersih'] === null && $data['peratus_gaji_bersih'] !== null && $data['gaji_pokok'] !== null) {
             if ($data['gaji_pokok'] > 0 && $data['peratus_gaji_bersih'] > 0) {
                 $calculated = round(($data['peratus_gaji_bersih'] / 100) * $data['gaji_pokok'], 2);
                 if ($calculated > 0 && $calculated < 50000) {
                     $data['gaji_bersih'] = $calculated;
-                    $data['debug_patterns'][] = "gaji_bersih: calculated from percentage * gaji_pokok";
+                    $data['debug_patterns'][] = "gaji_bersih: calculated from percentage * gaji_pokok ({$data['peratus_gaji_bersih']}% * {$data['gaji_pokok']})";
                     $data['confidence_scores']['gaji_bersih'] = 85; // High confidence for this calculation
                 }
             }
+        }
+        
+        // If we still don't have percentage, try to calculate it from gaji_bersih and gaji_pokok
+        if ($data['peratus_gaji_bersih'] === null && $data['gaji_bersih'] !== null && $data['gaji_pokok'] !== null) {
+            if ($data['gaji_pokok'] > 0) {
+                $calculated = round(($data['gaji_bersih'] / $data['gaji_pokok']) * 100, 2);
+                if ($calculated > 0 && $calculated <= 100) {
+                    $data['peratus_gaji_bersih'] = $calculated;
+                    $data['debug_patterns'][] = "peratus_gaji_bersih: calculated from gaji_bersih/gaji_pokok ({$data['gaji_bersih']}/{$data['gaji_pokok']})";
+                    $data['confidence_scores']['peratus_gaji_bersih'] = 75;
+                }
+            }
+        }
+        
+        // Ensure percentage is saved as a number (not currency formatted)
+        if ($data['peratus_gaji_bersih'] !== null) {
+            $data['peratus_gaji_bersih'] = (float) $data['peratus_gaji_bersih'];
         }
 
         return $data;
@@ -512,11 +556,21 @@ class PayslipProcessingService
         $simpleResults = [];
         $detailedResults = [];
         
-        if ($extractedData['peratus_gaji_bersih'] === null) {
-            return ['simple' => [], 'detailed' => []];
-        }
-        
+        // Always return a structure, even if no percentage is available
         $koperasis = Koperasi::where('is_active', true)->get();
+        
+        if ($extractedData['peratus_gaji_bersih'] === null) {
+            // Return empty eligibility for each koperasi
+            foreach ($koperasis as $koperasi) {
+                $simpleResults[$koperasi->name] = false;
+                $detailedResults[$koperasi->name] = [
+                    'eligible' => false,
+                    'reasons' => ['Percentage not available for eligibility check'],
+                    'score' => 0,
+                ];
+            }
+            return ['simple' => $simpleResults, 'detailed' => $detailedResults];
+        }
         
         foreach ($koperasis as $koperasi) {
             $eligibilityCheck = $this->performEligibilityCheck(
