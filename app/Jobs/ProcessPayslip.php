@@ -119,7 +119,7 @@ class ProcessPayslip implements ShouldQueue
             $postData = [
                 'apikey' => $apiKey,
                 'base64Image' => 'data:' . $mimeType . ';base64,' . $base64,
-                'language' => 'eng+msa', // English + Malay for Malaysian payslips
+                'language' => 'eng', // English (OCR.space doesn't support eng+msa format)
                 'isOverlayRequired' => 'false',
                 'detectOrientation' => 'true',
                 'scale' => 'true',

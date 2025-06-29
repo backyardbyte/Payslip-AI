@@ -972,7 +972,7 @@ class PayslipProcessingService
             $postData = [
                 'apikey' => $apiKey,
                 'base64Image' => 'data:' . $mimeType . ';base64,' . $base64,
-                'language' => 'eng+msa', // English + Malay for Malaysian payslips
+                'language' => 'eng', // English (OCR.space doesn't support eng+msa format)
                 'isOverlayRequired' => 'false',
                 'detectOrientation' => 'true',
                 'scale' => 'true',
@@ -1057,6 +1057,7 @@ class PayslipProcessingService
                 
                 // Try again with Engine 2
                 $postData['OCREngine'] = '2';
+                $postData['language'] = 'eng'; // Ensure language is still valid
                 
                 $ch2 = curl_init();
                 curl_setopt($ch2, CURLOPT_URL, 'https://api.ocr.space/parse/image');
