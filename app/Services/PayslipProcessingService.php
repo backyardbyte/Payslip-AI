@@ -821,16 +821,110 @@ class PayslipProcessingService
 
     private function performOCRSpace(string $filePath): string
     {
-        // Basic OCR.space implementation
+        // Fix API key retrieval - check if settings value is empty and fallback to env
         $settingsApiKey = $this->settingsService->get('ocr.ocrspace_api_key');
         $apiKey = !empty($settingsApiKey) ? $settingsApiKey : env('OCRSPACE_API_KEY');
         
         if (!$apiKey) {
-            throw new \Exception('OCR.space API key not configured');
+            throw new \Exception('OCR.space API key not configured. Please configure it in settings or .env file');
         }
         
-        // Implementation would go here
-        return "OCR text extracted";
+        $debugMode = $this->settingsService->get('advanced.enable_debug_mode', false);
+        
+        try {
+            // Read file and encode to base64
+            $fileData = file_get_contents($filePath);
+            $base64 = base64_encode($fileData);
+            
+            // Determine file type
+            $mimeType = mime_content_type($filePath);
+            
+            // Prepare OCR.space API request
+            $postData = [
+                'apikey' => $apiKey,
+                'base64Image' => 'data:' . $mimeType . ';base64,' . $base64,
+                'language' => 'eng', // Start with English only, add Malay later if needed
+                'isOverlayRequired' => 'false',
+                'detectOrientation' => 'true',
+                'scale' => 'true',
+                'OCREngine' => '2', // OCR Engine 2 is better for mixed languages
+                'isTable' => 'true', // Better for structured documents like payslips
+            ];
+            
+            // Make API request
+            $ch = curl_init();
+            curl_setopt($ch, CURLOPT_URL, 'https://api.ocr.space/parse/image');
+            curl_setopt($ch, CURLOPT_POST, true);
+            curl_setopt($ch, CURLOPT_POSTFIELDS, $postData);
+            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+            $ocrTimeout = $this->settingsService->get('ocr.api_timeout', 120); // Configurable timeout
+            curl_setopt($ch, CURLOPT_TIMEOUT, $ocrTimeout);
+            curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 30); // Connection timeout
+            curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+            curl_setopt($ch, CURLOPT_USERAGENT, 'Payslip-AI/1.0'); // User agent
+            curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true); // Follow redirects
+            
+            $response = curl_exec($ch);
+            $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            $curlError = curl_error($ch);
+            curl_close($ch);
+            
+            if ($curlError) {
+                throw new \Exception('OCR.space API request failed: ' . $curlError);
+            }
+            
+            if ($httpCode !== 200) {
+                throw new \Exception('OCR.space API returned HTTP ' . $httpCode);
+            }
+            
+            $result = json_decode($response, true);
+            
+            if (!$result) {
+                throw new \Exception('Invalid OCR.space API response: Failed to decode JSON. Raw response: ' . substr($response, 0, 500));
+            }
+            
+            if (!isset($result['ParsedResults'])) {
+                // Log full response for debugging
+                Log::error('OCR.space API response missing ParsedResults', [
+                    'response' => $result
+                ]);
+                throw new \Exception('Invalid OCR.space API response: Missing ParsedResults. Response: ' . json_encode($result));
+            }
+            
+            if (isset($result['ErrorMessage']) && !empty($result['ErrorMessage'])) {
+                $errorMsg = is_array($result['ErrorMessage']) ? implode(', ', $result['ErrorMessage']) : $result['ErrorMessage'];
+                throw new \Exception('OCR.space API error: ' . $errorMsg);
+            }
+            
+            if (isset($result['OCRExitCode']) && $result['OCRExitCode'] != 1) {
+                throw new \Exception('OCR.space API failed with exit code: ' . $result['OCRExitCode']);
+            }
+            
+            // Extract text from all parsed results
+            $extractedText = '';
+            foreach ($result['ParsedResults'] as $parsedResult) {
+                if (isset($parsedResult['ParsedText'])) {
+                    $extractedText .= $parsedResult['ParsedText'] . "\n";
+                }
+            }
+            
+            if ($debugMode) {
+                Log::info('PayslipProcessingService OCR.space extraction completed', [
+                    'text_length' => strlen($extractedText),
+                    'file_parse_status' => $result['ParsedResults'][0]['FileParseExitCode'] ?? 'unknown'
+                ]);
+            }
+            
+            return trim($extractedText);
+            
+        } catch (\Exception $e) {
+            Log::error('PayslipProcessingService OCR.space processing failed', [
+                'error' => $e->getMessage(),
+                'file_path' => $filePath
+            ]);
+            
+            throw new \Exception('OCR.space processing failed: ' . $e->getMessage() . '. Please check your OCR.space API key configuration.');
+        }
     }
 
     private function performTesseractOCR(string $filePath): string
