@@ -64,9 +64,8 @@ class PayslipProcessingService
             $processingTime = microtime(true) - $startTime;
             $confidence = $this->calculateConfidenceScore($extractedData, $text);
 
-            // Prepare final data
-            $finalData = [
-                'extracted_data' => $extractedData,
+            // Prepare final data - flatten structure for frontend compatibility
+            $finalData = array_merge($extractedData, [
                 'koperasi_results' => $eligibilityResults['simple'],
                 'detailed_koperasi_results' => $eligibilityResults['detailed'],
                 'validation_results' => $validationResult,
@@ -81,8 +80,10 @@ class PayslipProcessingService
                     'data_completeness' => $this->calculateDataCompleteness($extractedData),
                     'extraction_accuracy' => $confidence,
                     'validation_passed' => $validationResult['passed'],
-                ]
-            ];
+                ],
+                // Keep nested version for backwards compatibility
+                'extracted_data' => $extractedData
+            ]);
 
             // Update payslip with results
             $payslip->update([
@@ -445,12 +446,26 @@ class PayslipProcessingService
             }
         }
 
+        // Fix: Try to calculate Gaji Bersih even if result might be negative (data extraction issue)
         if ($data['gaji_bersih'] === null && $data['jumlah_pendapatan'] !== null && $data['jumlah_potongan'] !== null) {
             $calculated = round($data['jumlah_pendapatan'] - $data['jumlah_potongan'], 2);
-            if ($calculated > 0) {
-                $data['gaji_bersih'] = $calculated;
-                $data['debug_patterns'][] = "gaji_bersih: calculated from pendapatan-potongan";
-                $data['confidence_scores']['gaji_bersih'] = 70;
+            // Remove the positive check - sometimes extraction gives wrong totals
+            if (abs($calculated) > 0 && abs($calculated) < 50000) { // Allow negative but reasonable values
+                $data['gaji_bersih'] = abs($calculated); // Use absolute value for now
+                $data['debug_patterns'][] = "gaji_bersih: calculated from pendapatan-potongan (abs value used due to extraction issue)";
+                $data['confidence_scores']['gaji_bersih'] = 50; // Lower confidence due to potential extraction error
+            }
+        }
+
+        // Alternative: If we have percentage and gaji_pokok, calculate gaji_bersih
+        if ($data['gaji_bersih'] === null && $data['peratus_gaji_bersih'] !== null && $data['gaji_pokok'] !== null) {
+            if ($data['gaji_pokok'] > 0 && $data['peratus_gaji_bersih'] > 0) {
+                $calculated = round(($data['peratus_gaji_bersih'] / 100) * $data['gaji_pokok'], 2);
+                if ($calculated > 0 && $calculated < 50000) {
+                    $data['gaji_bersih'] = $calculated;
+                    $data['debug_patterns'][] = "gaji_bersih: calculated from percentage * gaji_pokok";
+                    $data['confidence_scores']['gaji_bersih'] = 85; // High confidence for this calculation
+                }
             }
         }
 
