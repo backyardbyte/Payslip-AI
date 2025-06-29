@@ -44,12 +44,35 @@ $startTime = date('Y-m-d H:i:s');
 echo "[$startTime] Starting Laravel Queue Worker...\n";
 echo "Configuration: Timeout={$queueTimeout}s, Memory={$queueMemory}MB, Sleep={$queueSleep}s, Tries={$queueTries}\n";
 
-// Determine PHP binary path
+// Force PHP 8.3 for shared hosting compatibility
+$phpBinary = '/opt/plesk/php/8.3/bin/php';
+
+// Verify it exists, otherwise try other paths
+if (!file_exists($phpBinary)) {
+    // Try other Plesk PHP versions
+    $phpPaths = [
+        '/opt/plesk/php/8.2/bin/php',
+        '/usr/bin/php8.3',
+        '/usr/bin/php8.2',
+    ];
+    
+    foreach ($phpPaths as $path) {
+        if (file_exists($path)) {
+            $phpBinary = $path;
+            break;
+        }
+    }
+    
+    if (!file_exists($phpBinary)) {
+        echo "ERROR: No suitable PHP binary found (need >= 8.2)\n";
+        echo "Tried: /opt/plesk/php/8.3/bin/php, /opt/plesk/php/8.2/bin/php\n";
+        exit(1);
+    }
+}
+
+// Override with environment variable if provided
 if (!empty($phpBinaryPath) && file_exists($phpBinaryPath)) {
     $phpBinary = $phpBinaryPath;
-} else {
-    // Use system default PHP - let Plesk/system decide
-    $phpBinary = 'php';
 }
 
 echo "Using PHP binary: $phpBinary\n";
