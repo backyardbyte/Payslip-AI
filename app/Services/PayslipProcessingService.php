@@ -311,8 +311,31 @@ class PayslipProcessingService
             
             // Handle side-by-side format specifically for Malaysian payslips: "Jumlah Potongan : 368.30 Gaji Bersih : 3,845.31"
             if (preg_match('/jumlah\s+potongan\s*:\s*([\d,]+\.\d{2}).*?gaji\s+bersih\s*:\s*([\d,]+\.\d{2})/i', $line, $matches)) {
-                $data['jumlah_potongan'] = (float) str_replace(',', '', $matches[1]);
-                $data['gaji_bersih'] = (float) str_replace(',', '', $matches[2]);
+                $potongan = (float) str_replace(',', '', $matches[1]);
+                $gaji_bersih = (float) str_replace(',', '', $matches[2]);
+                
+                // Validate values are reasonable before assigning
+                if ($potongan >= 0 && $potongan < 20000 && $data['jumlah_potongan'] === null) {
+                    $data['jumlah_potongan'] = $potongan;
+                }
+                if ($gaji_bersih > 0 && $gaji_bersih < 50000 && $data['gaji_bersih'] === null) {
+                    $data['gaji_bersih'] = $gaji_bersih;
+                }
+                continue;
+            }
+            
+            // Handle another side-by-side format: "Jumlah Pendapatan : 4,926.10 Jumlah Potongan : 2,962.50"
+            if (preg_match('/jumlah\s+pendapatan\s*:\s*([\d,]+\.\d{2}).*?jumlah\s+potongan\s*:\s*([\d,]+\.\d{2})/i', $line, $matches)) {
+                $pendapatan = (float) str_replace(',', '', $matches[1]);
+                $potongan = (float) str_replace(',', '', $matches[2]);
+                
+                // Validate and assign values
+                if ($pendapatan > 0 && $pendapatan < 50000 && $data['jumlah_pendapatan'] === null) {
+                    $data['jumlah_pendapatan'] = $pendapatan;
+                }
+                if ($potongan >= 0 && $potongan < 20000 && $data['jumlah_potongan'] === null) {
+                    $data['jumlah_potongan'] = $potongan;
+                }
                 continue;
             }
             
@@ -353,10 +376,14 @@ class PayslipProcessingService
                 }
             }
             
-            // Extract Jumlah Potongan - be more specific
-            if (preg_match('/^jumlah\s+potongan\s*[:]*\s*([\d,]+\.\d{2})/i', $line, $matches)) {
-                $data['jumlah_potongan'] = (float) str_replace(',', '', $matches[1]);
-                continue;
+            // Extract Jumlah Potongan - be more specific and handle different formats
+            if (preg_match('/jumlah\s+potongan\s*[:\s]*\s*([\d,]+\.\d{2})/i', $line, $matches)) {
+                $value = (float) str_replace(',', '', $matches[1]);
+                // Validate that it's a reasonable deduction amount (not too high)
+                if ($value >= 0 && $value < 20000) {
+                    $data['jumlah_potongan'] = $value;
+                    continue;
+                }
             }
             
             // Extract Gaji Bersih - be more specific and avoid confusion with percentage
@@ -393,6 +420,39 @@ class PayslipProcessingService
                 if ($value >= 0 && $value <= 100) {
                     $data['peratus_gaji_bersih'] = $value;
                 }
+            }
+        }
+        
+        // Enhanced summary section extraction - look for the bottom summary area
+        $summaryLines = array_slice($lines, -15); // Last 15 lines typically contain summary
+        $summaryText = implode(' ', $summaryLines);
+        
+        // Extract from summary section with priority (overwrites previous matches)
+        if (preg_match('/jumlah\s+pendapatan\s*:\s*([\d,]+\.\d{2})/i', $summaryText, $matches)) {
+            $value = (float) str_replace(',', '', $matches[1]);
+            if ($value > 0 && $value < 50000) {
+                $data['jumlah_pendapatan'] = $value;
+            }
+        }
+        
+        if (preg_match('/jumlah\s+potongan\s*:\s*([\d,]+\.\d{2})/i', $summaryText, $matches)) {
+            $value = (float) str_replace(',', '', $matches[1]);
+            if ($value >= 0 && $value < 20000) {
+                $data['jumlah_potongan'] = $value;
+            }
+        }
+        
+        if (preg_match('/gaji\s+bersih\s*:\s*([\d,]+\.\d{2})/i', $summaryText, $matches)) {
+            $value = (float) str_replace(',', '', $matches[1]);
+            if ($value > 0 && $value < 50000) {
+                $data['gaji_bersih'] = $value;
+            }
+        }
+        
+        if (preg_match('/%?\s*peratus\s+gaji\s+bersih\s*:\s*([\d,]+\.?\d*)/i', $summaryText, $matches)) {
+            $value = (float) str_replace(',', '', $matches[1]);
+            if ($value >= 0 && $value <= 100) {
+                $data['peratus_gaji_bersih'] = $value;
             }
         }
         
@@ -436,48 +496,203 @@ class PayslipProcessingService
     {
         $lines = explode("\n", $text);
         
-        // Try line-by-line extraction first
+        // First priority: Look for the exact "0001 Gaji Pokok" pattern with amount in Pendapatan section
         foreach ($lines as $line) {
             $line = trim($line);
             
-            // Look for "0001 Gaji Pokok" pattern with amount
+            // Pattern 1: "0001 Gaji Pokok [amount]" - most reliable
             if (preg_match('/0001\s+gaji\s+pokok\s+([\d,]+\.?\d*)/i', $line, $matches)) {
-                return (float) str_replace(',', '', $matches[1]);
-            }
-            
-            // Alternative pattern without code but with amount on same line
-            if (preg_match('/gaji\s+pokok\s+(?:RM\s*)?([\d,]+\.?\d*)/i', $line, $matches)) {
                 $value = (float) str_replace(',', '', $matches[1]);
-                if ($value > 100 && $value < 50000) { // Validate reasonable salary range
+                if ($value > 1000 && $value < 50000) {
                     return $value;
                 }
             }
         }
         
-        // Try multiline pattern - amount might be on next line
-        for ($i = 0; $i < count($lines) - 1; $i++) {
-            if (preg_match('/gaji\s+pokok/i', $lines[$i])) {
-                // Check next few lines for amount
-                for ($j = 1; $j <= 3 && ($i + $j) < count($lines); $j++) {
-                    if (preg_match('/^(?:RM\s*)?([\d,]+\.?\d*)$/i', trim($lines[$i + $j]), $matches)) {
-                        $value = (float) str_replace(',', '', $matches[1]);
-                        if ($value > 100 && $value < 50000) {
-                            return $value;
+        // Second priority: Look for structured format where "0001" and "Gaji Pokok" might be in table format
+        for ($i = 0; $i < count($lines); $i++) {
+            $line = trim($lines[$i]);
+            
+            // Pattern 1: Check if this line contains "0001" and "Gaji Pokok" in tabular format
+            if (preg_match('/0001.*gaji\s+pokok.*?([\d,]+\.\d{2})/i', $line, $matches)) {
+                $value = (float) str_replace(',', '', $matches[1]);
+                if ($value > 1000 && $value < 50000) {
+                    return $value;
+                }
+            }
+            
+            // Pattern 2: Check if this line contains "0001" and look for "Gaji Pokok" in nearby lines
+            if (preg_match('/^0001\s*$/i', $line) || preg_match('/^0001\s+/i', $line)) {
+                // Look in next few lines for "Gaji Pokok" and amount
+                for ($j = 0; $j <= 5 && ($i + $j) < count($lines); $j++) {
+                    $nextLine = trim($lines[$i + $j]);
+                    if (preg_match('/gaji\s+pokok/i', $nextLine)) {
+                        // Found "Gaji Pokok", now look for amount in this line or nearby lines
+                        if (preg_match('/([\d,]+\.\d{2})/i', $nextLine, $matches)) {
+                            $value = (float) str_replace(',', '', $matches[1]);
+                            if ($value > 1000 && $value < 50000) {
+                                return $value;
+                            }
+                        }
+                        // Also check lines after "Gaji Pokok"
+                        for ($k = 1; $k <= 3 && ($i + $j + $k) < count($lines); $k++) {
+                            $amountLine = trim($lines[$i + $j + $k]);
+                            if (preg_match('/^([\d,]+\.\d{2})$/i', $amountLine, $matches)) {
+                                $value = (float) str_replace(',', '', $matches[1]);
+                                if ($value > 1000 && $value < 50000) {
+                                    return $value;
+                                }
+                            }
                         }
                     }
                 }
             }
+            
+            // Pattern 3: Handle the specific Malaysian format like "0001 Gaji Pokok	3,365.73" (with tabs)
+            if (preg_match('/0001\s+gaji\s+pokok\s+([\d,]+\.\d{2})/i', $line, $matches)) {
+                $value = (float) str_replace(',', '', $matches[1]);
+                if ($value > 1000 && $value < 50000) {
+                    return $value;
+                }
+            }
         }
         
-        // Try pattern in full text (cross-line matching)
-        if (preg_match('/gaji\s+pokok[^\d]+([\d,]+\.?\d*)/is', $text, $matches)) {
-            $value = (float) str_replace(',', '', $matches[1]);
-            if ($value > 100 && $value < 50000) {
-                return $value;
+        // Third priority: Look for any "Gaji Pokok" with reasonable amount
+        foreach ($lines as $line) {
+            $line = trim($line);
+            if (preg_match('/gaji\s+pokok.*?([\d,]+\.\d{2})/i', $line, $matches)) {
+                $value = (float) str_replace(',', '', $matches[1]);
+                if ($value > 1000 && $value < 50000) {
+                    return $value;
+                }
+            }
+        }
+        
+        // Fourth priority: Look in the earnings section specifically
+        $inPendapatanSection = false;
+        foreach ($lines as $line) {
+            $line = trim($line);
+            
+            // Detect if we're in the Pendapatan section
+            if (preg_match('/^pendapatan\s*$/i', $line) || preg_match('/amaun.*rm/i', $line)) {
+                $inPendapatanSection = true;
+                continue;
+            }
+            
+            // Stop when we reach Potongan section
+            if (preg_match('/^potongan\s*$/i', $line) || preg_match('/jumlah\s+pendapatan/i', $line)) {
+                $inPendapatanSection = false;
+            }
+            
+            // Look for amounts in the Pendapatan section that could be Gaji Pokok
+            if ($inPendapatanSection && preg_match('/([\d,]+\.\d{2})/i', $line, $matches)) {
+                $value = (float) str_replace(',', '', $matches[1]);
+                // First large amount in earnings section is usually Gaji Pokok
+                if ($value > 2000 && $value < 20000) {
+                    return $value;
+                }
             }
         }
         
         return null;
+    }
+
+    /**
+     * Extract data from tabular sections (Pendapatan and Potongan)
+     */
+    private function extractTabularData(string $text): array
+    {
+        $data = [
+            'gaji_pokok' => null,
+            'jumlah_pendapatan' => null,
+            'jumlah_potongan' => null,
+            'individual_earnings' => [],
+            'individual_deductions' => []
+        ];
+        
+        $lines = explode("\n", $text);
+        $currentSection = null;
+        
+        foreach ($lines as $line) {
+            $line = trim($line);
+            
+            // Detect section headers
+            if (preg_match('/^pendapatan\s*$/i', $line)) {
+                $currentSection = 'earnings';
+                continue;
+            } elseif (preg_match('/^potongan\s*$/i', $line)) {
+                $currentSection = 'deductions';
+                continue;
+            } elseif (preg_match('/jumlah\s+(pendapatan|potongan)/i', $line)) {
+                $currentSection = 'summary';
+                continue;
+            }
+            
+            // Skip header lines
+            if (preg_match('/amaun\s+\(rm\)/i', $line) || preg_match('/^\s*$/i', $line)) {
+                continue;
+            }
+            
+            // Extract earnings data
+            if ($currentSection === 'earnings') {
+                // Pattern: "0001 Gaji Pokok 3,365.73" or "0001 Gaji Pokok	3,365.73"
+                if (preg_match('/(\d{4})\s+(.+?)\s+([\d,]+\.\d{2})/i', $line, $matches)) {
+                    $code = $matches[1];
+                    $description = trim($matches[2]);
+                    $amount = (float) str_replace(',', '', $matches[3]);
+                    
+                    $data['individual_earnings'][] = [
+                        'code' => $code,
+                        'description' => $description,
+                        'amount' => $amount
+                    ];
+                    
+                    // Extract Gaji Pokok specifically
+                    if (preg_match('/gaji\s+pokok/i', $description) && $amount > 1000 && $amount < 50000) {
+                        $data['gaji_pokok'] = $amount;
+                    }
+                }
+                
+                // Alternative pattern: code and description on separate lines
+                if (preg_match('/^(\d{4})\s*$/i', $line, $matches)) {
+                    $code = $matches[1];
+                    // Look for description and amount in next few lines
+                    // This is handled by the main extraction logic
+                }
+            }
+            
+            // Extract deductions data
+            if ($currentSection === 'deductions') {
+                if (preg_match('/(\d{4})\s+(.+?)\s+([\d,]+\.\d{2})/i', $line, $matches)) {
+                    $code = $matches[1];
+                    $description = trim($matches[2]);
+                    $amount = (float) str_replace(',', '', $matches[3]);
+                    
+                    $data['individual_deductions'][] = [
+                        'code' => $code,
+                        'description' => $description,
+                        'amount' => $amount
+                    ];
+                }
+            }
+        }
+        
+        // Calculate totals from individual items if not found elsewhere
+        if (!empty($data['individual_earnings']) && $data['jumlah_pendapatan'] === null) {
+            $total = array_sum(array_column($data['individual_earnings'], 'amount'));
+            if ($total > 0 && $total < 50000) {
+                $data['jumlah_pendapatan'] = $total;
+            }
+        }
+        
+        if (!empty($data['individual_deductions']) && $data['jumlah_potongan'] === null) {
+            $total = array_sum(array_column($data['individual_deductions'], 'amount'));
+            if ($total >= 0 && $total < 20000) {
+                $data['jumlah_potongan'] = $total;
+            }
+        }
+        
+        return $data;
     }
 
     /**
@@ -534,7 +749,17 @@ class PayslipProcessingService
             }
         }
 
-        // Extract Gaji Pokok from earnings section (if not found in summary)
+        // Extract data from tabular sections (HIGHEST PRIORITY for earnings/deductions)
+        $tabularData = $this->extractTabularData($text);
+        foreach ($tabularData as $field => $value) {
+            if ($value !== null && in_array($field, ['gaji_pokok', 'jumlah_pendapatan', 'jumlah_potongan'])) {
+                $data[$field] = $value;
+                $data['debug_patterns'][] = "{$field}: extracted from tabular section (PRIORITY)";
+                $data['confidence_scores'][$field] = 98; // Highest confidence for tabular extraction
+            }
+        }
+
+        // Extract Gaji Pokok from earnings section (if not found in tabular or summary)
         if ($data['gaji_pokok'] === null) {
             $gajiPokok = $this->extractGajiPokok($text);
             if ($gajiPokok !== null) {
@@ -596,6 +821,9 @@ class PayslipProcessingService
             $data['peratus_gaji_bersih'] = (float) $data['peratus_gaji_bersih'];
         }
         
+        // Enhanced data validation and relationship checking
+        $this->validateAndFixDataRelationships($data);
+        
         // Validate extracted data relationships
         if ($data['jumlah_pendapatan'] !== null && $data['jumlah_potongan'] !== null) {
             // Check if potongan is greater than pendapatan (likely extraction error)
@@ -624,6 +852,108 @@ class PayslipProcessingService
         }
 
         return $data;
+    }
+
+    /**
+     * Validate and fix data relationships
+     */
+    private function validateAndFixDataRelationships(array &$data): void
+    {
+        // Fix 1: If Gaji Pokok is higher than expected vs Gaji Bersih
+        if ($data['gaji_pokok'] !== null && $data['gaji_bersih'] !== null) {
+            $ratio = $data['gaji_bersih'] / $data['gaji_pokok'];
+            
+            // Gaji Bersih should be less than Gaji Pokok (after deductions)
+            if ($ratio > 1.2) { // Allow some margin for allowances
+                $data['debug_patterns'][] = "WARNING: Gaji bersih (" . $data['gaji_bersih'] . ") higher than gaji pokok (" . $data['gaji_pokok'] . ") - possible extraction error";
+                
+                // If we have reliable percentage, recalculate gaji_bersih
+                if ($data['peratus_gaji_bersih'] !== null && $data['peratus_gaji_bersih'] <= 100) {
+                    $recalculated = round(($data['peratus_gaji_bersih'] / 100) * $data['gaji_pokok'], 2);
+                    if ($recalculated > 0 && $recalculated < $data['gaji_pokok']) {
+                        $data['gaji_bersih'] = $recalculated;
+                        $data['debug_patterns'][] = "FIXED: Recalculated gaji_bersih using percentage";
+                    }
+                }
+            }
+            
+            // If ratio is too low (less than 20%), it might be an error
+            if ($ratio < 0.2 && $data['peratus_gaji_bersih'] !== null && $data['peratus_gaji_bersih'] > 20) {
+                $recalculated = round(($data['peratus_gaji_bersih'] / 100) * $data['gaji_pokok'], 2);
+                $data['gaji_bersih'] = $recalculated;
+                $data['debug_patterns'][] = "FIXED: Gaji bersih too low, recalculated using percentage";
+            }
+        }
+        
+        // Fix 2: Validate Jumlah Pendapatan vs Gaji Pokok
+        if ($data['jumlah_pendapatan'] !== null && $data['gaji_pokok'] !== null) {
+            // Jumlah Pendapatan should be >= Gaji Pokok (includes allowances)
+            if ($data['jumlah_pendapatan'] < $data['gaji_pokok']) {
+                $data['debug_patterns'][] = "WARNING: Jumlah pendapatan (" . $data['jumlah_pendapatan'] . ") less than gaji pokok (" . $data['gaji_pokok'] . ")";
+                
+                // If the difference is significant, the values might be swapped
+                if ($data['gaji_pokok'] / $data['jumlah_pendapatan'] > 2) {
+                    $temp = $data['jumlah_pendapatan'];
+                    $data['jumlah_pendapatan'] = $data['gaji_pokok'];
+                    $data['gaji_pokok'] = $temp;
+                    $data['debug_patterns'][] = "FIXED: Swapped jumlah_pendapatan and gaji_pokok";
+                }
+            }
+        }
+        
+        // Fix 3: Validate calculation: Gaji Bersih = Jumlah Pendapatan - Jumlah Potongan
+        if ($data['jumlah_pendapatan'] !== null && $data['jumlah_potongan'] !== null && $data['gaji_bersih'] !== null) {
+            $calculated_gaji_bersih = $data['jumlah_pendapatan'] - $data['jumlah_potongan'];
+            $difference = abs($calculated_gaji_bersih - $data['gaji_bersih']);
+            $tolerance = $data['gaji_bersih'] * 0.1; // 10% tolerance
+            
+            if ($difference > $tolerance) {
+                $data['debug_patterns'][] = "WARNING: Math doesn't add up - Pendapatan ({$data['jumlah_pendapatan']}) - Potongan ({$data['jumlah_potongan']}) ≠ Gaji Bersih ({$data['gaji_bersih']})";
+                
+                // If the calculated value is more reasonable, use it
+                if ($calculated_gaji_bersih > 0 && $calculated_gaji_bersih < 50000) {
+                    $data['gaji_bersih'] = round($calculated_gaji_bersih, 2);
+                    $data['debug_patterns'][] = "FIXED: Used calculated gaji_bersih = pendapatan - potongan";
+                }
+            }
+        }
+        
+        // Fix 4: Validate percentage calculation
+        if ($data['peratus_gaji_bersih'] !== null && $data['gaji_bersih'] !== null && $data['gaji_pokok'] !== null) {
+            $calculated_percentage = round(($data['gaji_bersih'] / $data['gaji_pokok']) * 100, 2);
+            $difference = abs($calculated_percentage - $data['peratus_gaji_bersih']);
+            
+            if ($difference > 5) { // 5% tolerance
+                $data['debug_patterns'][] = "WARNING: Percentage mismatch - Calculated: {$calculated_percentage}%, Extracted: {$data['peratus_gaji_bersih']}%";
+                
+                // Use the calculated percentage if it's more reasonable
+                if ($calculated_percentage > 0 && $calculated_percentage <= 100) {
+                    $data['peratus_gaji_bersih'] = $calculated_percentage;
+                    $data['debug_patterns'][] = "FIXED: Used calculated percentage";
+                }
+            }
+        }
+        
+        // Fix 5: If we have percentage but missing gaji_bersih or gaji_pokok, try to calculate
+        if ($data['peratus_gaji_bersih'] !== null) {
+            // Calculate gaji_bersih if missing
+            if ($data['gaji_bersih'] === null && $data['gaji_pokok'] !== null) {
+                $calculated = round(($data['peratus_gaji_bersih'] / 100) * $data['gaji_pokok'], 2);
+                if ($calculated > 0 && $calculated < 50000) {
+                    $data['gaji_bersih'] = $calculated;
+                    $data['debug_patterns'][] = "CALCULATED: gaji_bersih from percentage × gaji_pokok";
+                }
+            }
+            
+            // Calculate gaji_pokok if missing
+            if ($data['gaji_pokok'] === null && $data['gaji_bersih'] !== null && $data['peratus_gaji_bersih'] > 0) {
+                $calculated = round(($data['gaji_bersih'] / $data['peratus_gaji_bersih']) * 100, 2);
+                if ($calculated > 0 && $calculated < 50000) {
+                    $data['gaji_pokok'] = $calculated;
+                    $data['debug_patterns'][] = "CALCULATED: gaji_pokok from gaji_bersih ÷ percentage";
+                }
+            }
+        }
     }
 
     /**
