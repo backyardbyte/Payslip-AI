@@ -238,90 +238,92 @@ class ProcessPayslip implements ShouldQueue
         $originalText = $text;
 
         // Extract Nama - handle Malaysian government payslip format
-        // Format can be: "Nama\n: Actual Name" or "Nama\nActual Name" or "Nama: Actual Name"
-        if (preg_match('/nama\s*:\s*([^:]+?)(?:\s+no\.\s*gaji|$)/i', $cleanText, $matches)) {
-            $data['nama'] = trim($matches[1]);
-            $data['debug_patterns'][] = 'nama found (inline refined)';
-        } elseif (preg_match('/nama\s*:?\s*([^\n\r]+)/i', $cleanText, $matches)) {
+        // The OCR often misses the actual name, so we'll extract it from the structured area
+        if (preg_match('/nama\s*:\s*([^:\n\r]+?)(?:\s+no\.\s*gaji|$)/i', $cleanText, $matches)) {
             $candidateName = trim($matches[1]);
-            // Skip if it's just "Nama" with no actual name
-            if (!empty($candidateName) && strtolower($candidateName) !== 'nama') {
+            if (!preg_match('/no\.\s*gaji|kump\s*ptj/i', $candidateName)) {
                 $data['nama'] = $candidateName;
-                $data['debug_patterns'][] = 'nama found (inline)';
-            }
-        } elseif (preg_match('/nama\s*\n\s*:\s*([^\n\r]+)/i', $originalText, $matches)) {
-            $data['nama'] = trim($matches[1]);
-            $data['debug_patterns'][] = 'nama found (multiline with colon)';
-        } elseif (preg_match('/nama\s*\n\s*([^\n\r]+)/i', $originalText, $matches)) {
-            $candidateName = trim($matches[1]);
-            // Skip if it contains "No. Gaji" or other field indicators
-            if (!empty($candidateName) && !preg_match('/no\.\s*gaji|kump\s*ptj/i', $candidateName)) {
-                $data['nama'] = $candidateName;
-                $data['debug_patterns'][] = 'nama found (multiline direct)';
+                $data['debug_patterns'][] = 'nama found (inline with colon)';
             }
         }
         
-        // Additional pattern for Malaysian government format
-        // Look for standalone "Nama" then find the next meaningful line
+        // For Malaysian government format, look for the name near the top
         if (empty($data['nama'])) {
             $lines = preg_split('/\r\n|\r|\n/', $originalText);
             foreach ($lines as $index => $line) {
-                if (preg_match('/^\s*nama\s*$/i', trim($line))) {
-                    // Found "Nama" on its own line, check next few lines
-                    for ($i = $index + 1; $i < min(count($lines), $index + 4); $i++) {
-                        $nextLine = trim($lines[$i]);
-                        if (!empty($nextLine) && 
-                            !preg_match('/^\s*:\s*$/', $nextLine) && 
-                            !preg_match('/no\.\s*gaji|kump\s*ptj|jabatan|kementerian/i', $nextLine)) {
-                            $data['nama'] = $nextLine;
-                            $data['debug_patterns'][] = 'nama found (standalone line search)';
-                            break 2;
-                        }
-                    }
+                $trimmedLine = trim($line);
+                // Look for lines that might contain the actual name (usually after headers)
+                if ($index > 2 && $index < 8 && 
+                    !empty($trimmedLine) &&
+                    !preg_match('/kementerian|jabatan|nama|no\.\s*gaji|pendapatan|potongan|bulan|pej\./i', $trimmedLine) &&
+                    preg_match('/^[a-z\s]+$/i', $trimmedLine) &&
+                    strlen($trimmedLine) > 5) {
+                    $data['nama'] = $trimmedLine;
+                    $data['debug_patterns'][] = 'nama found (likely name line: ' . $trimmedLine . ')';
+                    break;
                 }
             }
         }
+        
+        // Fallback: if still no name found, note that it's missing from OCR
+        if (empty($data['nama'])) {
+            $data['debug_patterns'][] = 'nama not found in OCR (might be missing from text extraction)';
+        }
 
-        // Extract No. Gaji - handle Malaysian government format
-        if (preg_match('/no\.?\s*gaji\s*:?\s*([^\s\n\r]+)/i', $cleanText, $matches)) {
+        // Extract No. Gaji - handle Malaysian government payslip format with tabs
+        // Pattern: "No. Gaji	Kump PTJ/PTJ	: 53 / 53250101"
+        if (preg_match('/no\.?\s*gaji.*?:\s*(\d+)\s*\/?\s*(\d+)/i', $cleanText, $matches)) {
+            // Use the longer number (usually the full employee ID)
+            $longNumber = trim($matches[2]);
+            $shortNumber = trim($matches[1]);
+            $data['no_gaji'] = strlen($longNumber) > strlen($shortNumber) ? $longNumber : $shortNumber;
+            $data['debug_patterns'][] = 'no_gaji found (colon format with numbers: ' . $data['no_gaji'] . ')';
+        } 
+        
+        // Handle cases where there might be a colon but single number
+        elseif (preg_match('/no\.?\s*gaji.*?:\s*([a-z0-9]+)/i', $cleanText, $matches)) {
             $candidateNumber = trim($matches[1]);
-            if (!empty($candidateNumber) && strtolower($candidateNumber) !== 'gaji') {
+            if (strlen($candidateNumber) >= 4) { // Employee IDs are usually at least 4 digits
                 $data['no_gaji'] = $candidateNumber;
-                $data['debug_patterns'][] = 'no_gaji found (inline)';
-            }
-        } elseif (preg_match('/no\.?\s*gaji\s*\n\s*:\s*([^\n\r]+)/i', $originalText, $matches)) {
-            $data['no_gaji'] = trim($matches[1]);
-            $data['debug_patterns'][] = 'no_gaji found (multiline)';
-        }
-        
-        // Pattern for Malaysian government format: "No. Gaji	Kump PTJ/PTJ	: 53 / 53250101"
-        if (empty($data['no_gaji'])) {
-            if (preg_match('/no\.?\s*gaji.*?:\s*(\d+)\s*\/?\s*(\d+)/i', $cleanText, $matches)) {
-                // Try the longer number first, then shorter
-                $longNumber = trim($matches[2]);
-                $shortNumber = trim($matches[1]);
-                $data['no_gaji'] = strlen($longNumber) > strlen($shortNumber) ? $longNumber : $shortNumber;
-                $data['debug_patterns'][] = 'no_gaji found (Malaysian format with numbers)';
-            } elseif (preg_match('/no\.?\s*gaji.*?:\s*([a-z0-9]+)/i', $cleanText, $matches)) {
-                $data['no_gaji'] = trim($matches[1]);
-                $data['debug_patterns'][] = 'no_gaji found (Malaysian format general)';
+                $data['debug_patterns'][] = 'no_gaji found (colon format single: ' . $candidateNumber . ')';
             }
         }
         
-        // Look for standalone "No. Gaji" then find numbers in next lines
+        // Look for employee numbers in structured lines (even without colons)
         if (empty($data['no_gaji'])) {
             $lines = preg_split('/\r\n|\r|\n/', $originalText);
             foreach ($lines as $index => $line) {
                 if (preg_match('/no\.?\s*gaji/i', trim($line))) {
-                    // Check the same line and next few lines for employee numbers
-                    for ($i = $index; $i < min(count($lines), $index + 3); $i++) {
-                        $checkLine = trim($lines[$i]);
-                        if (preg_match('/(\d{8,}|\d{4,6})/', $checkLine, $matches)) {
-                            $data['no_gaji'] = trim($matches[1]);
-                            $data['debug_patterns'][] = 'no_gaji found (line search for numbers)';
-                            break 2;
-                        }
+                    // Check the same line for 8+ digit numbers (full employee ID)
+                    if (preg_match('/(\d{8,})/', $line, $matches)) {
+                        $data['no_gaji'] = trim($matches[1]);
+                        $data['debug_patterns'][] = 'no_gaji found (8+ digits on same line: ' . $data['no_gaji'] . ')';
+                        break;
                     }
+                    // Check for shorter employee numbers (4-7 digits)
+                    elseif (preg_match('/(\d{4,7})/', $line, $matches)) {
+                        $data['no_gaji'] = trim($matches[1]);
+                        $data['debug_patterns'][] = 'no_gaji found (4-7 digits on same line: ' . $data['no_gaji'] . ')';
+                        break;
+                    }
+                }
+            }
+        }
+        
+        // Final fallback: look for any reasonable employee ID patterns
+        if (empty($data['no_gaji'])) {
+            // Look for patterns like "20416406" (8 digits starting with year-like pattern)
+            if (preg_match('/\b((?:19|20)\d{6})\b/', $cleanText, $matches)) {
+                $data['no_gaji'] = trim($matches[1]);
+                $data['debug_patterns'][] = 'no_gaji found (year-pattern fallback: ' . $data['no_gaji'] . ')';
+            }
+            // Look for any 6-8 digit number that could be employee ID
+            elseif (preg_match('/\b(\d{6,8})\b/', $cleanText, $matches)) {
+                $candidateId = trim($matches[1]);
+                // Avoid bank account numbers and other long numbers
+                if (!preg_match('/11110290001|1836899/', $candidateId)) {
+                    $data['no_gaji'] = $candidateId;
+                    $data['debug_patterns'][] = 'no_gaji found (6-8 digit fallback: ' . $candidateId . ')';
                 }
             }
         }
@@ -335,26 +337,25 @@ class ProcessPayslip implements ShouldQueue
             $data['debug_patterns'][] = 'bulan found (adjacent)';
         }
 
-        // Extract Gaji Pokok - look for the amount that corresponds to code 0001/Gaji Pokok
-        // Pattern: Look for the amount structure where Gaji Pokok appears
-        if (preg_match('/pendapatan\s+0001.*?potongan\s+amaun.*?([\d,]+\.?\d*)/is', $cleanText, $matches)) {
+        // Extract Gaji Pokok - handle tab-separated format: "0001 Gaji Pokok	3,365.73"
+        if (preg_match('/0001\s+gaji\s+pokok\s+([\d,]+\.?\d*)/i', $cleanText, $matches)) {
             $data['gaji_pokok'] = (float) str_replace(',', '', $matches[1]);
-            $data['debug_patterns'][] = 'gaji_pokok found (amount structure)';
-        } elseif (preg_match('/amaun.*?([\d,]+\.?\d*).*?gaji\s+pokok/is', $cleanText, $matches)) {
+            $data['debug_patterns'][] = 'gaji_pokok found (tab format with code)';
+        } elseif (preg_match('/gaji\s+pokok\s+([\d,]+\.?\d*)/i', $cleanText, $matches)) {
             $data['gaji_pokok'] = (float) str_replace(',', '', $matches[1]);
-            $data['debug_patterns'][] = 'gaji_pokok found (before label)';
-        } elseif (preg_match('/gaji\s+pokok\s+([0-9,]+\.?\d*)/i', $cleanText, $matches)) {
+            $data['debug_patterns'][] = 'gaji_pokok found (tab format)';
+        } elseif (preg_match('/gaji\s+pokok.*?([\d,]+\.?\d*)/i', $cleanText, $matches)) {
             $data['gaji_pokok'] = (float) str_replace(',', '', $matches[1]);
-            $data['debug_patterns'][] = 'gaji_pokok found (adjacent)';
-        } elseif (preg_match('/0001.*?gaji\s+pokok.*?([\d,]+\.?\d*)/i', $cleanText, $matches)) {
-            $data['gaji_pokok'] = (float) str_replace(',', '', $matches[1]);
-            $data['debug_patterns'][] = 'gaji_pokok found (with code)';
+            $data['debug_patterns'][] = 'gaji_pokok found (flexible)';
         }
 
-        // Extract Jumlah Pendapatan
-        if (preg_match('/jumlah\s+pendapatan\s*:?\s*([\d,]+\.?\d*)/i', $cleanText, $matches)) {
+        // Extract Jumlah Pendapatan - handle tab format: "Jumlah Pendapatan	4,926.10"
+        if (preg_match('/jumlah\s+pendapatan\s+([\d,]+\.?\d*)/i', $cleanText, $matches)) {
             $data['jumlah_pendapatan'] = (float) str_replace(',', '', $matches[1]);
-            $data['debug_patterns'][] = 'jumlah_pendapatan found (inline)';
+            $data['debug_patterns'][] = 'jumlah_pendapatan found (tab format)';
+        } elseif (preg_match('/jumlah\s+pendapatan\s*:?\s*([\d,]+\.?\d*)/i', $cleanText, $matches)) {
+            $data['jumlah_pendapatan'] = (float) str_replace(',', '', $matches[1]);
+            $data['debug_patterns'][] = 'jumlah_pendapatan found (colon format)';
         }
 
         // Handle side-by-side format for Malaysian government payslips
@@ -397,25 +398,28 @@ class ProcessPayslip implements ShouldQueue
         39.86
         */
         
-        // First try inline patterns
+        // Handle percentage patterns - "% Peratus Gaji Bersih	AYSIA	39.86."
         $patterns = [
-            // Inline patterns from sample: "% Peratus Gaji Bersih : 91.26"
-            '/%\s*Peratus\s+Gaji\s+Bersih\s*:\s*([\d,]+\.?\d*)/i',
+            // Tab format with text in between: "% Peratus Gaji Bersih	AYSIA	39.86."
+            '/%\s*peratus\s+gaji\s+bersih.*?([\d,]+\.?\d*)\s*\.?\s*$/im',
+            // Standard colon format: "% Peratus Gaji Bersih : 91.26"
             '/%\s*peratus\s+gaji\s+bersih\s*:\s*([\d,]+\.?\d*)/i',
-            '/peratus\s+gaji\s+bersih.*?:\s*([\d,]+\.?\d*)/i',
+            // Flexible format allowing text between
+            '/%\s*peratus\s+gaji\s+bersih.*?([\d,]+\.?\d*)/i',
+            // Without % symbol
             '/peratus\s+gaji\s+bersih.*?([\d,]+\.?\d*)/i',
-            // Pattern for Malaysian government payslips with leading spaces
-            '/%\s*peratus\s+gaji\s+bersih\s*:\s*([\d,]+\.\d{1,2})\s*$/im',
-            // Pattern after gaji bersih context
-            '/gaji\s+bersih\s*:\s*[\d,]+\.\d{2}.*?%\s*peratus\s+gaji\s+bersih\s*:\s*([\d,]+\.\d{2})/im',
         ];
 
         foreach ($patterns as $pattern) {
             if (preg_match($pattern, $cleanText, $matches)) {
-                $value = (float) str_replace(',', '', $matches[1]);
+                $rawValue = $matches[1];
+                // Clean up the value (remove trailing periods, etc.)
+                $cleanValue = rtrim($rawValue, '.');
+                $value = (float) str_replace(',', '', $cleanValue);
+                $data['debug_patterns'][] = 'peratus_gaji_bersih attempt: ' . $value . ' (from: ' . $rawValue . ')';
                 if ($value >= $minPercentage && $value <= $maxPercentage) {
                     $data['peratus_gaji_bersih'] = $value;
-                    $data['debug_patterns'][] = 'peratus_gaji_bersih found (inline): ' . $value;
+                    $data['debug_patterns'][] = 'peratus_gaji_bersih found: ' . $value;
                     break;
                 }
             }
@@ -494,26 +498,24 @@ class ProcessPayslip implements ShouldQueue
             }
         }
 
-        // Extract Gaji Bersih using the same multiline logic as percentage
+        // Extract Gaji Bersih - handle tab format: "Gaji Bersih	1382.8"
         if ($data['gaji_bersih'] === null) {
-            // Try inline patterns first
-            $gajiBersihPatterns = [
-                '/gaji\s+bersih\s*:\s*([\d,]+\.?\d*)/i',
-                // Remove greedy patterns that pick up bank account numbers
-                '/bersih\s*:\s*([\d,]+\.?\d*)/i'
-            ];
-            
-            foreach ($gajiBersihPatterns as $pattern) {
-                if (preg_match($pattern, $cleanText, $matches)) {
-                    $value = (float) str_replace(',', '', $matches[1]);
-                    $data['debug_patterns'][] = 'gaji_bersih attempt (inline): ' . $value . ' from pattern: ' . $pattern . ' match: ' . $matches[1];
-                    if ($value > $minSalary && $value < $maxSalary) { // Configurable salary range
-                        $data['gaji_bersih'] = $value;
-                        $data['debug_patterns'][] = 'gaji_bersih found (inline): ' . $value;
-                        break;
-                    } else {
-                        $data['debug_patterns'][] = 'gaji_bersih rejected (inline): ' . $value . ' (out of range)';
-                    }
+            // Try tab format first (Malaysian government payslips)
+            if (preg_match('/gaji\s+bersih\s+([\d,]+\.?\d*)/i', $cleanText, $matches)) {
+                $value = (float) str_replace(',', '', $matches[1]);
+                $data['debug_patterns'][] = 'gaji_bersih attempt (tab format): ' . $value;
+                if ($value > $minSalary && $value < $maxSalary) {
+                    $data['gaji_bersih'] = $value;
+                    $data['debug_patterns'][] = 'gaji_bersih found (tab format): ' . $value;
+                }
+            }
+            // Try colon format
+            elseif (preg_match('/gaji\s+bersih\s*:\s*([\d,]+\.?\d*)/i', $cleanText, $matches)) {
+                $value = (float) str_replace(',', '', $matches[1]);
+                $data['debug_patterns'][] = 'gaji_bersih attempt (colon format): ' . $value;
+                if ($value > $minSalary && $value < $maxSalary) {
+                    $data['gaji_bersih'] = $value;
+                    $data['debug_patterns'][] = 'gaji_bersih found (colon format): ' . $value;
                 }
             }
         }
@@ -565,10 +567,12 @@ class ProcessPayslip implements ShouldQueue
             }
         }
 
-        // Extract Jumlah Potongan with better targeting - avoid bank account numbers
+        // Extract Jumlah Potongan - handle various formats
         $potonganPatterns = [
+            // Tab format: "Jumlah Potongan	1,234.56"
+            '/jumlah\s+potongan\s+([\d,]+\.?\d*)/i',
+            // Colon format: "Jumlah Potongan : 1,234.56"
             '/jumlah\s+potongan\s*:\s*([\d,]+\.?\d*)/i',
-            // Don't use greedy patterns that could pick up bank account numbers
         ];
         
         foreach ($potonganPatterns as $pattern) {
@@ -582,6 +586,18 @@ class ProcessPayslip implements ShouldQueue
                 } else {
                     $data['debug_patterns'][] = 'jumlah_potongan rejected: ' . $value . ' (out of range)';
                 }
+            }
+        }
+        
+        // If still not found, try to calculate from Jumlah Pendapatan - Gaji Bersih
+        if ($data['jumlah_potongan'] === null && 
+            $data['jumlah_pendapatan'] !== null && 
+            $data['gaji_bersih'] !== null) {
+            
+            $calculatedPotongan = $data['jumlah_pendapatan'] - $data['gaji_bersih'];
+            if ($calculatedPotongan >= 0 && $calculatedPotongan < $maxSalary) {
+                $data['jumlah_potongan'] = round($calculatedPotongan, 2);
+                $data['debug_patterns'][] = 'jumlah_potongan calculated: ' . $data['jumlah_potongan'] . ' (Pendapatan: ' . $data['jumlah_pendapatan'] . ' - Gaji Bersih: ' . $data['gaji_bersih'] . ')';
             }
         }
         

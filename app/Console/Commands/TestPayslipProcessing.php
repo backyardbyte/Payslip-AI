@@ -334,16 +334,63 @@ class TestPayslipProcessing extends Command
             $data['debug_patterns'][] = 'bulan found (adjacent)';
         }
 
-        // Simple patterns for salary fields
-        if (preg_match('/gaji\s+bersih\s*:\s*([\d,]+\.?\d*)/i', $cleanText, $matches)) {
-            $data['gaji_bersih'] = (float) str_replace(',', '', $matches[1]);
-            $data['debug_patterns'][] = 'gaji_bersih found (simple)';
-        }
+                 // Extract salary fields using improved patterns
+         
+         // Gaji Pokok - tab format: "0001 Gaji Pokok	3,365.73"
+         if (preg_match('/0001\s+gaji\s+pokok\s+([\d,]+\.?\d*)/i', $cleanText, $matches)) {
+             $data['gaji_pokok'] = (float) str_replace(',', '', $matches[1]);
+             $data['debug_patterns'][] = 'gaji_pokok found (tab format)';
+         } elseif (preg_match('/gaji\s+pokok\s+([\d,]+\.?\d*)/i', $cleanText, $matches)) {
+             $data['gaji_pokok'] = (float) str_replace(',', '', $matches[1]);
+             $data['debug_patterns'][] = 'gaji_pokok found (general tab)';
+         }
+         
+         // Jumlah Pendapatan - tab format: "Jumlah Pendapatan	4,926.10"
+         if (preg_match('/jumlah\s+pendapatan\s+([\d,]+\.?\d*)/i', $cleanText, $matches)) {
+             $data['jumlah_pendapatan'] = (float) str_replace(',', '', $matches[1]);
+             $data['debug_patterns'][] = 'jumlah_pendapatan found (tab format)';
+         }
+         
+         // Gaji Bersih - tab format: "Gaji Bersih	1382.8"
+         if (preg_match('/gaji\s+bersih\s+([\d,]+\.?\d*)/i', $cleanText, $matches)) {
+             $data['gaji_bersih'] = (float) str_replace(',', '', $matches[1]);
+             $data['debug_patterns'][] = 'gaji_bersih found (tab format)';
+         } elseif (preg_match('/gaji\s+bersih\s*:\s*([\d,]+\.?\d*)/i', $cleanText, $matches)) {
+             $data['gaji_bersih'] = (float) str_replace(',', '', $matches[1]);
+             $data['debug_patterns'][] = 'gaji_bersih found (colon format)';
+         }
 
-        if (preg_match('/%\s*peratus\s+gaji\s+bersih\s*:\s*([\d,]+\.?\d*)/i', $cleanText, $matches)) {
-            $data['peratus_gaji_bersih'] = (float) str_replace(',', '', $matches[1]);
-            $data['debug_patterns'][] = 'peratus_gaji_bersih found (simple)';
-        }
+         // Peratus Gaji Bersih - handle "% Peratus Gaji Bersih	AYSIA	39.86."
+         $percentagePatterns = [
+             '/%\s*peratus\s+gaji\s+bersih.*?([\d,]+\.?\d*)\s*\.?\s*$/im',
+             '/%\s*peratus\s+gaji\s+bersih\s*:\s*([\d,]+\.?\d*)/i',
+             '/%\s*peratus\s+gaji\s+bersih.*?([\d,]+\.?\d*)/i',
+         ];
+         
+         foreach ($percentagePatterns as $pattern) {
+             if (preg_match($pattern, $cleanText, $matches)) {
+                 $rawValue = $matches[1];
+                 $cleanValue = rtrim($rawValue, '.');
+                 $value = (float) str_replace(',', '', $cleanValue);
+                 if ($value >= 10 && $value <= 100) {
+                     $data['peratus_gaji_bersih'] = $value;
+                     $data['debug_patterns'][] = 'peratus_gaji_bersih found: ' . $value . ' (from: ' . $rawValue . ')';
+                     break;
+                 }
+             }
+         }
+         
+         // Jumlah Potongan - calculate if not found directly
+         if (preg_match('/jumlah\s+potongan\s+([\d,]+\.?\d*)/i', $cleanText, $matches)) {
+             $data['jumlah_potongan'] = (float) str_replace(',', '', $matches[1]);
+             $data['debug_patterns'][] = 'jumlah_potongan found (tab format)';
+         } elseif ($data['jumlah_pendapatan'] !== null && $data['gaji_bersih'] !== null) {
+             $calculated = $data['jumlah_pendapatan'] - $data['gaji_bersih'];
+             if ($calculated >= 0) {
+                 $data['jumlah_potongan'] = round($calculated, 2);
+                 $data['debug_patterns'][] = 'jumlah_potongan calculated: ' . $data['jumlah_potongan'];
+             }
+         }
 
         return $data;
     }
