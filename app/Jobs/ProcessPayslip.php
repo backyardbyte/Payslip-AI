@@ -237,25 +237,93 @@ class ProcessPayslip implements ShouldQueue
         // For multi-line matching, we also need the original text with line breaks
         $originalText = $text;
 
-        // Extract Nama - handle the specific format where it's on the next line after "Nama"
+        // Extract Nama - handle Malaysian government payslip format
+        // Format can be: "Nama\n: Actual Name" or "Nama\nActual Name" or "Nama: Actual Name"
         if (preg_match('/nama\s*:\s*([^:]+?)(?:\s+no\.\s*gaji|$)/i', $cleanText, $matches)) {
             $data['nama'] = trim($matches[1]);
             $data['debug_patterns'][] = 'nama found (inline refined)';
         } elseif (preg_match('/nama\s*:?\s*([^\n\r]+)/i', $cleanText, $matches)) {
-            $data['nama'] = trim($matches[1]);
-            $data['debug_patterns'][] = 'nama found (inline)';
+            $candidateName = trim($matches[1]);
+            // Skip if it's just "Nama" with no actual name
+            if (!empty($candidateName) && strtolower($candidateName) !== 'nama') {
+                $data['nama'] = $candidateName;
+                $data['debug_patterns'][] = 'nama found (inline)';
+            }
         } elseif (preg_match('/nama\s*\n\s*:\s*([^\n\r]+)/i', $originalText, $matches)) {
             $data['nama'] = trim($matches[1]);
-            $data['debug_patterns'][] = 'nama found (multiline)';
+            $data['debug_patterns'][] = 'nama found (multiline with colon)';
+        } elseif (preg_match('/nama\s*\n\s*([^\n\r]+)/i', $originalText, $matches)) {
+            $candidateName = trim($matches[1]);
+            // Skip if it contains "No. Gaji" or other field indicators
+            if (!empty($candidateName) && !preg_match('/no\.\s*gaji|kump\s*ptj/i', $candidateName)) {
+                $data['nama'] = $candidateName;
+                $data['debug_patterns'][] = 'nama found (multiline direct)';
+            }
+        }
+        
+        // Additional pattern for Malaysian government format
+        // Look for standalone "Nama" then find the next meaningful line
+        if (empty($data['nama'])) {
+            $lines = preg_split('/\r\n|\r|\n/', $originalText);
+            foreach ($lines as $index => $line) {
+                if (preg_match('/^\s*nama\s*$/i', trim($line))) {
+                    // Found "Nama" on its own line, check next few lines
+                    for ($i = $index + 1; $i < min(count($lines), $index + 4); $i++) {
+                        $nextLine = trim($lines[$i]);
+                        if (!empty($nextLine) && 
+                            !preg_match('/^\s*:\s*$/', $nextLine) && 
+                            !preg_match('/no\.\s*gaji|kump\s*ptj|jabatan|kementerian/i', $nextLine)) {
+                            $data['nama'] = $nextLine;
+                            $data['debug_patterns'][] = 'nama found (standalone line search)';
+                            break 2;
+                        }
+                    }
+                }
+            }
         }
 
-        // Extract No. Gaji
+        // Extract No. Gaji - handle Malaysian government format
         if (preg_match('/no\.?\s*gaji\s*:?\s*([^\s\n\r]+)/i', $cleanText, $matches)) {
-            $data['no_gaji'] = trim($matches[1]);
-            $data['debug_patterns'][] = 'no_gaji found (inline)';
+            $candidateNumber = trim($matches[1]);
+            if (!empty($candidateNumber) && strtolower($candidateNumber) !== 'gaji') {
+                $data['no_gaji'] = $candidateNumber;
+                $data['debug_patterns'][] = 'no_gaji found (inline)';
+            }
         } elseif (preg_match('/no\.?\s*gaji\s*\n\s*:\s*([^\n\r]+)/i', $originalText, $matches)) {
             $data['no_gaji'] = trim($matches[1]);
             $data['debug_patterns'][] = 'no_gaji found (multiline)';
+        }
+        
+        // Pattern for Malaysian government format: "No. Gaji	Kump PTJ/PTJ	: 53 / 53250101"
+        if (empty($data['no_gaji'])) {
+            if (preg_match('/no\.?\s*gaji.*?:\s*(\d+)\s*\/?\s*(\d+)/i', $cleanText, $matches)) {
+                // Try the longer number first, then shorter
+                $longNumber = trim($matches[2]);
+                $shortNumber = trim($matches[1]);
+                $data['no_gaji'] = strlen($longNumber) > strlen($shortNumber) ? $longNumber : $shortNumber;
+                $data['debug_patterns'][] = 'no_gaji found (Malaysian format with numbers)';
+            } elseif (preg_match('/no\.?\s*gaji.*?:\s*([a-z0-9]+)/i', $cleanText, $matches)) {
+                $data['no_gaji'] = trim($matches[1]);
+                $data['debug_patterns'][] = 'no_gaji found (Malaysian format general)';
+            }
+        }
+        
+        // Look for standalone "No. Gaji" then find numbers in next lines
+        if (empty($data['no_gaji'])) {
+            $lines = preg_split('/\r\n|\r|\n/', $originalText);
+            foreach ($lines as $index => $line) {
+                if (preg_match('/no\.?\s*gaji/i', trim($line))) {
+                    // Check the same line and next few lines for employee numbers
+                    for ($i = $index; $i < min(count($lines), $index + 3); $i++) {
+                        $checkLine = trim($lines[$i]);
+                        if (preg_match('/(\d{8,}|\d{4,6})/', $checkLine, $matches)) {
+                            $data['no_gaji'] = trim($matches[1]);
+                            $data['debug_patterns'][] = 'no_gaji found (line search for numbers)';
+                            break 2;
+                        }
+                    }
+                }
+            }
         }
 
         // Extract Bulan (Month/Year)
