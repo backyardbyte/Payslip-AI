@@ -48,24 +48,8 @@ echo "Configuration: Timeout={$queueTimeout}s, Memory={$queueMemory}MB, Sleep={$
 if (!empty($phpBinaryPath) && file_exists($phpBinaryPath)) {
     $phpBinary = $phpBinaryPath;
 } else {
-    // Try common PHP binary paths
-    $phpPaths = [
-        '/opt/plesk/php/8.3/bin/php',
-        '/opt/plesk/php/8.2/bin/php',
-        '/opt/plesk/php/8.1/bin/php',
-        '/usr/bin/php8.3',
-        '/usr/bin/php8.2',
-        '/usr/bin/php8.1',
-        '/usr/bin/php'
-    ];
-    
-    $phpBinary = 'php'; // Default fallback
-    foreach ($phpPaths as $path) {
-        if (file_exists($path)) {
-            $phpBinary = $path;
-            break;
-        }
-    }
+    // Use system default PHP - let Plesk/system decide
+    $phpBinary = 'php';
 }
 
 echo "Using PHP binary: $phpBinary\n";
