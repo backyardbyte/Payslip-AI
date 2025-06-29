@@ -95,13 +95,49 @@ class ProcessPayslip implements ShouldQueue
                 
                 try {
                     $text = (new Pdf($pdfToTextPath))->setPdf($path)->text();
+                    Log::info('PDF text extraction successful', [
+                        'payslip_id' => $this->payslip->id,
+                        'text_length' => strlen($text)
+                    ]);
                 } catch (\Exception $pdfError) {
-                    $text = $this->performOCR($path);
+                    Log::warning('PDF text extraction failed, attempting OCR', [
+                        'payslip_id' => $this->payslip->id,
+                        'pdf_error' => $pdfError->getMessage()
+                    ]);
+                    try {
+                        $text = $this->performOCR($path);
+                    } catch (\Exception $ocrError) {
+                        Log::error('Both PDF and OCR extraction failed', [
+                            'payslip_id' => $this->payslip->id,
+                            'pdf_error' => $pdfError->getMessage(),
+                            'ocr_error' => $ocrError->getMessage()
+                        ]);
+                        // Continue with empty text to let pattern matching handle it
+                        $text = '';
+                    }
                 }
             } else {
-                $text = $this->performOCR($path);
+                try {
+                    $text = $this->performOCR($path);
+                } catch (\Exception $ocrError) {
+                    Log::error('OCR extraction failed for non-PDF file', [
+                        'payslip_id' => $this->payslip->id,
+                        'mime_type' => $mime,
+                        'ocr_error' => $ocrError->getMessage()
+                    ]);
+                    // Continue with empty text
+                    $text = '';
+                }
             }
 
+            if (empty($text)) {
+                Log::warning('No text extracted from payslip', [
+                    'payslip_id' => $this->payslip->id,
+                    'mime_type' => $mime,
+                    'file_path' => $path
+                ]);
+            }
+            
             $extractedData = $this->extractPayslipData($text);
 
             $koperasiResults = [];
