@@ -54,6 +54,18 @@ class PayslipProcessingService
             // Process and extract payslip data
             $extractedData = $this->extractPayslipDataAdvanced($text);
             
+            // Log the extracted text for debugging if fields are missing
+            if ($debugMode || $this->hasMissingCriticalFields($extractedData)) {
+                Log::info('PayslipProcessingService OCR Text Debug', [
+                    'payslip_id' => $payslip->id,
+                    'text_length' => strlen($text),
+                    'first_500_chars' => substr($text, 0, 500),
+                    'extracted_fields' => array_filter($extractedData, function($value, $key) {
+                        return !in_array($key, ['debug_patterns', 'confidence_scores']) && $value !== null;
+                    }, ARRAY_FILTER_USE_BOTH)
+                ]);
+            }
+            
             // Validate extracted data
             $validationResult = $this->validateExtractedData($extractedData);
             
@@ -384,9 +396,25 @@ class PayslipProcessingService
             }
         }
         
-        // Look for the specific Malaysian government payslip format in the summary
+                    // Look for the specific Malaysian government payslip format in the summary
         // This often appears at the bottom with specific formatting
-        if (preg_match('/pendapatan\s+bercukai\s*:\s*([\d,]+\.\d{2})\s+gaji\s+bersih\s*:\s*([\d,]+\.\d{2})\s+%?\s*peratus\s+gaji\s+bersih\s*:\s*([\d,]+\.?\d*)/i', $textNoBreaks, $matches)) {
+        if (preg_match('/pendapatan\s+bercukai\s*:\s*([\d,]+\.?\d*)\s+gaji\s+bersih\s*:\s*([\d,]+\.?\d*)\s+%?\s*peratus\s+gaji\s+bersih\s*:\s*([\d,]+\.?\d*)/i', $textNoBreaks, $matches)) {
+            if ($data['gaji_bersih'] === null) {
+                $data['gaji_bersih'] = (float) str_replace(',', '', $matches[2]);
+            }
+            if ($data['peratus_gaji_bersih'] === null) {
+                $value = (float) str_replace(',', '', $matches[3]);
+                if ($value >= 0 && $value <= 100) {
+                    $data['peratus_gaji_bersih'] = $value;
+                }
+            }
+        }
+        
+        // Additional pattern for summary where jumlah potongan, gaji bersih, and percentage appear together
+        if (preg_match('/jumlah\s+potongan\s*:\s*([\d,]+\.?\d*)\s+gaji\s+bersih\s*:\s*([\d,]+\.?\d*)\s+%?\s*peratus\s+gaji\s+bersih\s*:\s*([\d,]+\.?\d*)/i', $textNoBreaks, $matches)) {
+            if ($data['jumlah_potongan'] === null) {
+                $data['jumlah_potongan'] = (float) str_replace(',', '', $matches[1]);
+            }
             if ($data['gaji_bersih'] === null) {
                 $data['gaji_bersih'] = (float) str_replace(',', '', $matches[2]);
             }
@@ -408,17 +436,44 @@ class PayslipProcessingService
     {
         $lines = explode("\n", $text);
         
+        // Try line-by-line extraction first
         foreach ($lines as $line) {
             $line = trim($line);
             
             // Look for "0001 Gaji Pokok" pattern with amount
-            if (preg_match('/0001\s+gaji\s+pokok\s+([\d,]+\.\d{2})/i', $line, $matches)) {
+            if (preg_match('/0001\s+gaji\s+pokok\s+([\d,]+\.?\d*)/i', $line, $matches)) {
                 return (float) str_replace(',', '', $matches[1]);
             }
             
-            // Alternative pattern without code
-            if (preg_match('/gaji\s+pokok\s+([\d,]+\.\d{2})/i', $line, $matches)) {
-                return (float) str_replace(',', '', $matches[1]);
+            // Alternative pattern without code but with amount on same line
+            if (preg_match('/gaji\s+pokok\s+(?:RM\s*)?([\d,]+\.?\d*)/i', $line, $matches)) {
+                $value = (float) str_replace(',', '', $matches[1]);
+                if ($value > 100 && $value < 50000) { // Validate reasonable salary range
+                    return $value;
+                }
+            }
+        }
+        
+        // Try multiline pattern - amount might be on next line
+        for ($i = 0; $i < count($lines) - 1; $i++) {
+            if (preg_match('/gaji\s+pokok/i', $lines[$i])) {
+                // Check next few lines for amount
+                for ($j = 1; $j <= 3 && ($i + $j) < count($lines); $j++) {
+                    if (preg_match('/^(?:RM\s*)?([\d,]+\.?\d*)$/i', trim($lines[$i + $j]), $matches)) {
+                        $value = (float) str_replace(',', '', $matches[1]);
+                        if ($value > 100 && $value < 50000) {
+                            return $value;
+                        }
+                    }
+                }
+            }
+        }
+        
+        // Try pattern in full text (cross-line matching)
+        if (preg_match('/gaji\s+pokok[^\d]+([\d,]+\.?\d*)/is', $text, $matches)) {
+            $value = (float) str_replace(',', '', $matches[1]);
+            if ($value > 100 && $value < 50000) {
+                return $value;
             }
         }
         
@@ -694,36 +749,56 @@ class PayslipProcessingService
         $this->extractionPatterns = [
             'nama' => [
                 [
-                    'regex' => '/nama\s*\n\s*:\s*([^\r\n]+)/im',
-                    'description' => 'Name in multiline format (field and value on separate lines)',
+                    'regex' => '/nama\s*:\s*([A-Z][A-Z\s]+(?:BIN|BINTI|A\/L|A\/P)?[A-Z\s]+)/im',
+                    'description' => 'Name with Malaysian name patterns',
                     'confidence_weight' => 0.95
                 ],
                 [
-                    'regex' => '/nama\s*:\s*([^\r\n]+?)(?:\s*no\.\s*gaji|$)/im',
+                    'regex' => '/nama\s*:\s*([^\r\n]+?)(?=\s*(?:no\.?\s*gaji|employee|$))/im',
                     'description' => 'Name field from payslip header',
+                    'confidence_weight' => 0.9
+                ],
+                [
+                    'regex' => '/nama\s*\n\s*:\s*([^\r\n]+)/im',
+                    'description' => 'Name in multiline format',
                     'confidence_weight' => 0.9
                 ],
                 [
                     'regex' => '/^\s*nama\s*:\s*(.+?)$/im',
                     'description' => 'Name on dedicated line',
                     'confidence_weight' => 0.8
+                ],
+                [
+                    'regex' => '/(?:nama|name)\s*[:\-]?\s*([A-Z][A-Za-z\s]+)/i',
+                    'description' => 'Flexible name pattern',
+                    'confidence_weight' => 0.7
                 ]
             ],
             'no_gaji' => [
                 [
-                    'regex' => '/no\.\s*gaji\s*\n\s*:\s*([a-z0-9]+)/im',
-                    'description' => 'Employee number in multiline format',
+                    'regex' => '/no\.?\s*gaji\s*:\s*(\d{6,})/im',
+                    'description' => 'Employee number with at least 6 digits',
                     'confidence_weight' => 0.95
                 ],
                 [
-                    'regex' => '/no\.\s*gaji\s*:\s*([a-z0-9]+)/im',
-                    'description' => 'Employee number from header',
+                    'regex' => '/no\.?\s*gaji\s*:\s*([A-Z0-9]{6,})/im',
+                    'description' => 'Employee number alphanumeric',
                     'confidence_weight' => 0.9
                 ],
                 [
-                    'regex' => '/^\s*no\.\s*gaji\s*:\s*([a-z0-9]+)/im',
-                    'description' => 'Employee number on dedicated line',
+                    'regex' => '/(?:no\.?\s*gaji|employee\s*(?:id|no))\s*[:\-]?\s*(\d+)/im',
+                    'description' => 'Flexible employee number pattern',
+                    'confidence_weight' => 0.85
+                ],
+                [
+                    'regex' => '/no\.?\s*gaji\s*\n\s*:\s*([a-z0-9]+)/im',
+                    'description' => 'Employee number in multiline format',
                     'confidence_weight' => 0.8
+                ],
+                [
+                    'regex' => '/^\s*no\.?\s*gaji\s*:\s*([a-z0-9]+)/im',
+                    'description' => 'Employee number on dedicated line',
+                    'confidence_weight' => 0.75
                 ]
             ],
             'bulan' => [
@@ -745,24 +820,29 @@ class PayslipProcessingService
             ],
             'gaji_pokok' => [
                 [
-                    'regex' => '/pendapatan.*?0001.*?amaun.*?([\d,]+\.\d{2}).*?gaji\s+pokok/ims',
-                    'description' => 'Basic salary amount from earnings section with code 0001',
+                    'regex' => '/0001\s+gaji\s+pokok\s+([\d,]+\.?\d*)/im',
+                    'description' => 'Basic salary with code 0001',
                     'confidence_weight' => 0.95
                 ],
                 [
-                    'regex' => '/0001.*?gaji\s+pokok.*?([\d,]+\.\d{2})/ims',
-                    'description' => 'Basic salary with code 0001 (multiline)',
+                    'regex' => '/gaji\s+pokok\s*[:=]?\s*(?:RM\s*)?([\d,]+\.?\d*)/im',
+                    'description' => 'Basic salary with optional RM',
                     'confidence_weight' => 0.9
                 ],
                 [
-                    'regex' => '/0001\s+gaji\s+pokok.*?([\d,]+\.\d{2})/im',
-                    'description' => 'Basic salary with code 0001',
+                    'regex' => '/pendapatan.*?0001.*?(?:amaun|amount).*?([\d,]+\.?\d*).*?gaji\s+pokok/ims',
+                    'description' => 'Basic salary from earnings section with code',
                     'confidence_weight' => 0.85
                 ],
                 [
-                    'regex' => '/gaji\s+pokok\s+([\d,]+\.\d{2})/im',
-                    'description' => 'Basic salary direct amount',
+                    'regex' => '/0001.*?gaji\s+pokok.*?([\d,]+\.?\d*)/ims',
+                    'description' => 'Basic salary with code 0001 (multiline)',
                     'confidence_weight' => 0.8
+                ],
+                [
+                    'regex' => '/gaji\s+pokok[^\d]+([\d,]+\.?\d*)/i',
+                    'description' => 'Basic salary flexible pattern',
+                    'confidence_weight' => 0.75
                 ]
             ],
             'jumlah_pendapatan' => [
@@ -779,26 +859,46 @@ class PayslipProcessingService
             ],
             'jumlah_potongan' => [
                 [
-                    'regex' => '/jumlah\s+potongan\s*:\s*([\d,]+\.\d{2})/im',
-                    'description' => 'Total deductions from summary',
-                    'confidence_weight' => 0.9
+                    'regex' => '/jumlah\s+potongan\s*[:=]\s*(?:RM\s*)?([\d,]+\.?\d*)/im',
+                    'description' => 'Total deductions with colon/equals',
+                    'confidence_weight' => 0.95
                 ],
                 [
-                    'regex' => '/jumlah\s+potongan\s+([\d,]+\.\d{2})/im',
+                    'regex' => '/jumlah\s+potongan\s+(?:RM\s*)?([\d,]+\.?\d*)/im',
                     'description' => 'Total deductions without colon',
+                    'confidence_weight' => 0.85
+                ],
+                [
+                    'regex' => '/(?:total\s+(?:deductions?|potongan))[^\d]+([\d,]+\.?\d*)/i',
+                    'description' => 'Total deductions flexible',
                     'confidence_weight' => 0.8
+                ],
+                [
+                    'regex' => '/potongan[^\d]+([\d,]+\.?\d*)/i',
+                    'description' => 'Deductions simple pattern',
+                    'confidence_weight' => 0.7
                 ]
             ],
             'gaji_bersih' => [
                 [
-                    'regex' => '/gaji\s+bersih\s*:\s*([\d,]+\.\d{2})/im',
-                    'description' => 'Net salary from summary',
-                    'confidence_weight' => 0.9
+                    'regex' => '/gaji\s+bersih\s*[:=]\s*(?:RM\s*)?([\d,]+\.?\d*)/im',
+                    'description' => 'Net salary with colon/equals',
+                    'confidence_weight' => 0.95
                 ],
                 [
-                    'regex' => '/gaji\s+bersih\s+([\d,]+\.\d{2})/im',
+                    'regex' => '/gaji\s+bersih\s+(?:RM\s*)?([\d,]+\.?\d*)/im',
                     'description' => 'Net salary without colon',
+                    'confidence_weight' => 0.85
+                ],
+                [
+                    'regex' => '/(?:net\s+salary|gaji\s+bersih)[^\d]+([\d,]+\.?\d*)/i',
+                    'description' => 'Net salary flexible pattern',
                     'confidence_weight' => 0.8
+                ],
+                [
+                    'regex' => '/pendapatan\s+bercukai\s*:\s*[\d,]+\.?\d*\s+gaji\s+bersih\s*:\s*([\d,]+\.?\d*)/i',
+                    'description' => 'Net salary after pendapatan bercukai',
+                    'confidence_weight' => 0.9
                 ]
             ],
             'peratus_gaji_bersih' => [
@@ -870,13 +970,30 @@ class PayslipProcessingService
 
     private function processFieldValue(string $field, string $rawValue): mixed
     {
+        // Clean the raw value first
+        $cleanValue = trim($rawValue);
+        $cleanValue = preg_replace('/^RM\s*/i', '', $cleanValue); // Remove RM prefix
+        $cleanValue = str_replace(',', '', $cleanValue); // Remove commas
+        
         switch ($field) {
             case 'peratus_gaji_bersih':
             case 'gaji_bersih':
             case 'gaji_pokok':
-                return (float) str_replace(',', '', trim($rawValue));
+            case 'jumlah_pendapatan':
+            case 'jumlah_potongan':
+                // Extract numeric value from string
+                if (preg_match('/([\d.]+)/', $cleanValue, $matches)) {
+                    return (float) $matches[1];
+                }
+                return null;
+            case 'nama':
+                // Clean name - remove extra spaces and normalize
+                return preg_replace('/\s+/', ' ', strtoupper($cleanValue));
+            case 'no_gaji':
+                // Clean employee ID - remove non-alphanumeric
+                return preg_replace('/[^A-Z0-9]/i', '', $cleanValue);
             default:
-                return trim($rawValue);
+                return $cleanValue;
         }
     }
 
@@ -939,6 +1056,17 @@ class PayslipProcessingService
         if (strpos($message, 'pattern') !== false) return 'data_extraction';
         
         return 'unknown';
+    }
+    
+    private function hasMissingCriticalFields(array $data): bool
+    {
+        $criticalFields = ['nama', 'no_gaji', 'gaji_pokok', 'gaji_bersih', 'peratus_gaji_bersih'];
+        foreach ($criticalFields as $field) {
+            if (!isset($data[$field]) || $data[$field] === null) {
+                return true;
+            }
+        }
+        return false;
     }
 
     // Simplified OCR methods

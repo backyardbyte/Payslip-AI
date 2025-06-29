@@ -26,8 +26,10 @@ class Payslip extends Model
         'processing_completed_at',
         'processing_error',
         'extracted_data',
+        'processing_metadata',
         'source',
         'telegram_chat_id',
+        'whatsapp_phone',
     ];
 
     /**
@@ -37,6 +39,7 @@ class Payslip extends Model
      */
     protected $casts = [
         'extracted_data' => 'array',
+        'processing_metadata' => 'array',
         'processing_started_at' => 'datetime',
         'processing_completed_at' => 'datetime',
     ];
