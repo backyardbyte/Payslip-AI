@@ -90,31 +90,25 @@ class ProcessPayslip implements ShouldQueue
             $text = '';
 
             if ($mime === 'application/pdf') {
-                $settingsService = app(SettingsService::class);
-                $pdfToTextPath = $settingsService->get('ocr.pdftotext_path', '/usr/bin/pdftotext');
+                // Try OCR.space directly for PDFs since pdftotext is not available
+                Log::info('Processing PDF with OCR.space (pdftotext not available)', [
+                    'payslip_id' => $this->payslip->id,
+                    'mime_type' => $mime
+                ]);
                 
                 try {
-                    $text = (new Pdf($pdfToTextPath))->setPdf($path)->text();
-                    Log::info('PDF text extraction successful', [
+                    $text = $this->performOCR($path);
+                    Log::info('PDF OCR extraction successful', [
                         'payslip_id' => $this->payslip->id,
                         'text_length' => strlen($text)
                     ]);
-                } catch (\Exception $pdfError) {
-                    Log::warning('PDF text extraction failed, attempting OCR', [
+                } catch (\Exception $ocrError) {
+                    Log::error('PDF OCR extraction failed', [
                         'payslip_id' => $this->payslip->id,
-                        'pdf_error' => $pdfError->getMessage()
+                        'ocr_error' => $ocrError->getMessage()
                     ]);
-                    try {
-                        $text = $this->performOCR($path);
-                    } catch (\Exception $ocrError) {
-                        Log::error('Both PDF and OCR extraction failed', [
-                            'payslip_id' => $this->payslip->id,
-                            'pdf_error' => $pdfError->getMessage(),
-                            'ocr_error' => $ocrError->getMessage()
-                        ]);
-                        // Continue with empty text to let pattern matching handle it
-                        $text = '';
-                    }
+                    // Continue with empty text
+                    $text = '';
                 }
             } else {
                 try {
