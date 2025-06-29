@@ -72,7 +72,19 @@ echo "Using PHP binary: $phpBinary\n";
 
 // Build the artisan command
 $command = $phpBinary . ' artisan queue:work';
-$command .= ' --stop-when-empty';    // Exit when no jobs
+
+// Choose execution mode based on environment variable
+$runMode = getenv('QUEUE_RUN_MODE') ?: 'continuous'; // 'continuous' or 'batch'
+
+if ($runMode === 'batch') {
+    // Batch mode: Process existing jobs then exit (good for cron jobs every minute)
+    $command .= ' --stop-when-empty';
+    echo "Running in BATCH mode (will exit when queue is empty)\n";
+} else {
+    // Continuous mode: Stay alive and wait for new jobs (good for real-time processing)
+    echo "Running in CONTINUOUS mode (will stay alive for new jobs)\n";
+}
+
 $command .= ' --sleep=' . $queueSleep;  // Sleep time when no jobs
 $command .= ' --tries=' . $queueTries;  // Max attempts per job
 $command .= ' --max-time=' . $queueTimeout;  // Max execution time
