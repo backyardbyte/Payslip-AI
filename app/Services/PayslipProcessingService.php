@@ -918,19 +918,26 @@ class PayslipProcessingService
             }
         }
         
-        // Fix 4: Validate percentage calculation
+        // Fix 4: Validate percentage calculation (be careful not to override correct extractions)
         if ($data['peratus_gaji_bersih'] !== null && $data['gaji_bersih'] !== null && $data['gaji_pokok'] !== null) {
             $calculated_percentage = round(($data['gaji_bersih'] / $data['gaji_pokok']) * 100, 2);
             $difference = abs($calculated_percentage - $data['peratus_gaji_bersih']);
             
-            if ($difference > 5) { // 5% tolerance
-                $data['debug_patterns'][] = "WARNING: Percentage mismatch - Calculated: {$calculated_percentage}%, Extracted: {$data['peratus_gaji_bersih']}%";
+            if ($difference > 10) { // Increased tolerance - only fix if major discrepancy
+                $data['debug_patterns'][] = "WARNING: Major percentage mismatch - Calculated: {$calculated_percentage}%, Extracted: {$data['peratus_gaji_bersih']}%";
                 
-                // Use the calculated percentage if it's more reasonable
-                if ($calculated_percentage > 0 && $calculated_percentage <= 100) {
-                    $data['peratus_gaji_bersih'] = $calculated_percentage;
-                    $data['debug_patterns'][] = "FIXED: Used calculated percentage";
+                // Only override if extracted percentage is clearly wrong (>100% or <0%)
+                if ($data['peratus_gaji_bersih'] > 100 || $data['peratus_gaji_bersih'] < 0) {
+                    if ($calculated_percentage > 0 && $calculated_percentage <= 100) {
+                        $data['peratus_gaji_bersih'] = $calculated_percentage;
+                        $data['debug_patterns'][] = "FIXED: Used calculated percentage (extracted was invalid)";
+                    }
+                } else {
+                    // Keep the extracted value as it's likely more accurate from the summary section
+                    $data['debug_patterns'][] = "KEPT: Using extracted percentage (likely more accurate from payslip)";
                 }
+            } else if ($difference > 5) {
+                $data['debug_patterns'][] = "INFO: Minor percentage difference - Calculated: {$calculated_percentage}%, Extracted: {$data['peratus_gaji_bersih']}%";
             }
         }
         
@@ -1079,8 +1086,8 @@ class PayslipProcessingService
         $this->extractionPatterns = [
             'nama' => [
                 [
-                    'regex' => '/nama\s*:\s*([A-Z][A-Z\s]+(?:BIN|BINTI|A\/L|A\/P)?[A-Z\s]+)/im',
-                    'description' => 'Name with Malaysian name patterns',
+                    'regex' => '/nama\s*:\s*([A-Z][A-Z\s]+(?:BIN|BINTI|A\/L|A\/P)[A-Z\s]+?)(?:\s+NO)?\s*$/im',
+                    'description' => 'Name with Malaysian name patterns (excluding NO suffix)',
                     'confidence_weight' => 0.95
                 ],
                 [
