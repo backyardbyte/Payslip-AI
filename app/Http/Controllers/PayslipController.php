@@ -221,6 +221,7 @@ class PayslipController extends Controller
                 'user_id' => Auth::id(),
                 'file_path' => $path,
                 'status' => 'queued',
+                'source' => 'web',
             ]);
 
             \Log::info('Payslip created', ['id' => $payslip->id]);
@@ -602,6 +603,7 @@ class PayslipController extends Controller
             'name' => basename($payslip->file_path),
             'size' => $payslip->file_path ? Storage::size($payslip->file_path) : 0,
             'status' => $payslip->status,
+            'source' => $payslip->source ?? 'web',
             'data' => [
                 'nama' => $extractedData['nama'] ?? null,
                 'no_gaji' => $extractedData['no_gaji'] ?? null,

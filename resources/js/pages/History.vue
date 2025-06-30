@@ -150,7 +150,7 @@
                                     <TableHead class="w-[200px]">Employee</TableHead>
                                     <TableHead class="w-[120px]">Month</TableHead>
                                     <TableHead class="w-[120px]">Gaji Bersih</TableHead>
-                                    <TableHead class="w-[100px]">% Rate</TableHead>
+                                    <TableHead class="w-[100px]">Source</TableHead>
                                     <TableHead class="w-[120px]">Eligibility</TableHead>
                                     <TableHead class="w-[100px]">Status</TableHead>
                                     <TableHead class="w-[130px]">Processed At</TableHead>
@@ -181,8 +181,17 @@
                                         </div>
                                     </TableCell>
                                     <TableCell>
-                                        <div class="font-bold text-primary">
-                                            {{ record.data?.peratus_gaji_bersih ? `${record.data.peratus_gaji_bersih}%` : 'N/A' }}
+                                        <div class="flex items-center gap-1.5">
+                                            <span :class="[
+                                                'inline-flex items-center px-2 py-1 text-xs font-medium rounded-full',
+                                                record.source === 'telegram' ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-400' : 
+                                                record.source === 'whatsapp' ? 'bg-green-100 text-green-700 dark:bg-green-900/50 dark:text-green-400' :
+                                                'bg-gray-100 text-gray-700 dark:bg-gray-900/50 dark:text-gray-400'
+                                            ]">
+                                                {{ record.source === 'telegram' ? 'Telegram' : 
+                                                   record.source === 'whatsapp' ? 'WhatsApp' :
+                                                   'Web App' }}
+                                            </span>
                                         </div>
                                     </TableCell>
                                     <TableCell>
@@ -423,6 +432,7 @@ interface PayslipRecord {
     name: string;
     status: 'queued' | 'processing' | 'completed' | 'failed';
     created_at: string;
+    source?: 'telegram' | 'whatsapp' | 'web' | string;
     data?: {
         nama?: string;
         no_gaji?: string;
@@ -651,13 +661,15 @@ const exportData = async () => {
         
         // Create CSV content
         const csvContent = [
-            ['Name', 'Employee ID', 'Month', 'Gaji Bersih', 'Peratus Gaji Bersih', 'Status', 'Processed At'].join(','),
+            ['Name', 'Employee ID', 'Month', 'Gaji Bersih', 'Source', 'Status', 'Processed At'].join(','),
             ...filteredHistory.value.map(record => [
                 record.data?.nama || 'N/A',
                 record.data?.no_gaji || 'N/A',
                 record.data?.bulan || 'N/A',
                 record.data?.gaji_bersih || 'N/A',
-                record.data?.peratus_gaji_bersih || 'N/A',
+                record.source === 'telegram' ? 'Telegram' : 
+                record.source === 'whatsapp' ? 'WhatsApp' :
+                'Web App',
                 record.status,
                 formatDate(record.created_at)
             ].join(','))

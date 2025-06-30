@@ -4,6 +4,7 @@ namespace App\Console\Commands;
 
 use App\Models\Payslip;
 use App\Services\TelegramBotService;
+use App\Services\SimpleTelegramBotService;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Log;
 
@@ -14,14 +15,16 @@ class SendMissingTelegramResults extends Command
      *
      * @var string
      */
-    protected $signature = 'telegram:send-missing-results {--payslip-id= : Specific payslip ID to send results for}';
+    protected $signature = 'telegram:send-missing-results 
+                            {--payslip-id= : Specific payslip ID to send results for}
+                            {--test-chat-id= : Send a test notification to a specific chat ID}';
 
     /**
      * The console command description.
      *
      * @var string
      */
-    protected $description = 'Send missing Telegram results for completed payslips';
+    protected $description = 'Send missing Telegram results for completed payslips or send a test notification';
 
     /**
      * Execute the console command.
@@ -29,6 +32,13 @@ class SendMissingTelegramResults extends Command
     public function handle()
     {
         $payslipId = $this->option('payslip-id');
+        $testChatId = $this->option('test-chat-id');
+        
+        // Handle test notification
+        if ($testChatId) {
+            $this->sendTestNotification($testChatId);
+            return Command::SUCCESS;
+        }
         
         if ($payslipId) {
             // Send result for specific payslip
@@ -58,6 +68,61 @@ class SendMissingTelegramResults extends Command
         return Command::SUCCESS;
     }
     
+    private function sendTestNotification(string $chatId): void
+    {
+        try {
+            $this->info("Sending test notification to chat ID: {$chatId}...");
+            
+            $telegramService = new SimpleTelegramBotService();
+            
+            // Create a dummy payslip with test data
+            $testPayslip = new Payslip([
+                'id' => 999,
+                'telegram_chat_id' => $chatId,
+                'status' => 'completed',
+                'processing_completed_at' => now(),
+                'extracted_data' => [
+                    'nama' => 'TEST USER',
+                    'no_gaji' => 'TEST123',
+                    'bulan' => '01/2025',
+                    'gaji_pokok' => 5000.00,
+                    'gaji_bersih' => 4000.00,
+                    'peratus_gaji_bersih' => 80.00,
+                    'jumlah_pendapatan' => 5500.00,
+                    'jumlah_potongan' => 1500.00,
+                ]
+            ]);
+            
+            // Test eligibility results
+            $eligibilityResults = [
+                [
+                    'koperasi_name' => 'Koperasi Test 1',
+                    'eligible' => true,
+                    'reasons' => ['✅ Percentage requirement met (80% ≤ 90%)']
+                ],
+                [
+                    'koperasi_name' => 'Koperasi Test 2',
+                    'eligible' => false,
+                    'reasons' => ['❌ Percentage too high (80% > 75%)']
+                ],
+                [
+                    'koperasi_name' => 'Koperasi Test 3',
+                    'eligible' => true,
+                    'reasons' => ['✅ All requirements met']
+                ]
+            ];
+            
+            $telegramService->sendProcessingResult($testPayslip, $eligibilityResults);
+            
+            $this->info("✅ Test notification sent successfully!");
+            Log::info("Test Telegram notification sent to chat {$chatId}");
+            
+        } catch (\Exception $e) {
+            $this->error("❌ Failed to send test notification: " . $e->getMessage());
+            Log::error("Failed to send test Telegram notification: " . $e->getMessage());
+        }
+    }
+    
     private function sendTelegramResult(Payslip $payslip): void
     {
         try {
@@ -70,7 +135,7 @@ class SendMissingTelegramResults extends Command
                 return;
             }
 
-            $telegramService = new TelegramBotService();
+            $telegramService = new SimpleTelegramBotService();
             
             // Format eligibility results from extracted data
             $eligibilityResults = [];

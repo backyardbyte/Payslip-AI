@@ -54,8 +54,9 @@ class ProcessPayslip implements ShouldQueue
         $result = $processingService->processPayslip($this->payslip);
         
         // Send notifications with enhanced data
-        $this->sendTelegramNotification($result['detailed_koperasi_results']);
-        $this->sendWhatsAppNotification($result['detailed_koperasi_results']);
+        $detailedResults = $result['detailed_koperasi_results'] ?? [];
+        $this->sendTelegramNotification($detailedResults);
+        $this->sendWhatsAppNotification($detailedResults);
 
         // Update batch progress if this payslip is part of a batch
         if ($this->payslip->batch_id) {
@@ -297,7 +298,7 @@ class ProcessPayslip implements ShouldQueue
     /**
      * Send processing result to Telegram if payslip came from Telegram
      */
-    private function sendTelegramNotification(array $detailedKoperasiResults): void
+    private function sendTelegramNotification(array $detailedKoperasiResults = []): void
     {
         // Only send notification if payslip came from Telegram
         if ($this->payslip->source !== 'telegram' || !$this->payslip->telegram_chat_id) {
@@ -317,12 +318,28 @@ class ProcessPayslip implements ShouldQueue
             
             // Format eligibility results for Telegram
             $eligibilityResults = [];
-            foreach ($detailedKoperasiResults as $koperasiName => $result) {
-                $eligibilityResults[] = [
-                    'koperasi_name' => $koperasiName,
-                    'eligible' => $result['eligible'],
-                    'reasons' => $result['reasons']
-                ];
+            
+            // Handle empty or null detailed results
+            if (!empty($detailedKoperasiResults)) {
+                foreach ($detailedKoperasiResults as $koperasiName => $result) {
+                    $eligibilityResults[] = [
+                        'koperasi_name' => $koperasiName,
+                        'eligible' => $result['eligible'] ?? false,
+                        'reasons' => $result['reasons'] ?? []
+                    ];
+                }
+            } else {
+                // If no detailed results, try to get from simple koperasi_results
+                $extractedData = $this->payslip->extracted_data ?? [];
+                if (isset($extractedData['koperasi_results']) && is_array($extractedData['koperasi_results'])) {
+                    foreach ($extractedData['koperasi_results'] as $koperasiName => $isEligible) {
+                        $eligibilityResults[] = [
+                            'koperasi_name' => $koperasiName,
+                            'eligible' => $isEligible,
+                            'reasons' => [$isEligible ? 'Eligible based on percentage' : 'Not eligible based on percentage']
+                        ];
+                    }
+                }
             }
 
             $telegramService->sendProcessingResult($this->payslip, $eligibilityResults);
@@ -337,7 +354,7 @@ class ProcessPayslip implements ShouldQueue
     /**
      * Send WhatsApp notification with results
      */
-    private function sendWhatsAppNotification(array $detailedKoperasiResults): void
+    private function sendWhatsAppNotification(array $detailedKoperasiResults = []): void
     {
         // Only send notification if payslip came from WhatsApp
         if ($this->payslip->source !== 'whatsapp' || !$this->payslip->whatsapp_phone) {
@@ -356,12 +373,28 @@ class ProcessPayslip implements ShouldQueue
             
             // Format eligibility results for WhatsApp
             $eligibilityResults = [];
-            foreach ($detailedKoperasiResults as $koperasiName => $result) {
-                $eligibilityResults[] = [
-                    'koperasi_name' => $koperasiName,
-                    'eligible' => $result['eligible'],
-                    'reasons' => $result['reasons']
-                ];
+            
+            // Handle empty or null detailed results
+            if (!empty($detailedKoperasiResults)) {
+                foreach ($detailedKoperasiResults as $koperasiName => $result) {
+                    $eligibilityResults[] = [
+                        'koperasi_name' => $koperasiName,
+                        'eligible' => $result['eligible'] ?? false,
+                        'reasons' => $result['reasons'] ?? []
+                    ];
+                }
+            } else {
+                // If no detailed results, try to get from simple koperasi_results
+                $extractedData = $this->payslip->extracted_data ?? [];
+                if (isset($extractedData['koperasi_results']) && is_array($extractedData['koperasi_results'])) {
+                    foreach ($extractedData['koperasi_results'] as $koperasiName => $isEligible) {
+                        $eligibilityResults[] = [
+                            'koperasi_name' => $koperasiName,
+                            'eligible' => $isEligible,
+                            'reasons' => [$isEligible ? 'Layak berdasarkan peratus' : 'Tidak layak berdasarkan peratus']
+                        ];
+                    }
+                }
             }
 
             $whatsappService->sendProcessingResult($this->payslip, $eligibilityResults);
