@@ -122,7 +122,7 @@ import { UserCheck, MessageCircle, FileText, Zap, Shield, Clock, ChevronRight, S
                         </div>
                         
                         <div class="space-y-2">
-                            <a href="https://t.me/YourPayslipBot" target="_blank" rel="noopener noreferrer" class="block w-full">
+                            <a href="https://t.me/tuahplan_bot" target="_blank" rel="noopener noreferrer" class="block w-full">
                                 <Button size="sm" class="w-full h-7 text-xs">
                                     <MessageCircle class="mr-1 h-3 w-3" />
                                     Start Bot
