@@ -1,23 +1,23 @@
 <template>
   <Card>
-    <CardHeader>
-      <CardTitle class="flex items-center gap-2">
-        <UploadCloud class="h-5 w-5" />
+    <CardHeader class="pb-3">
+      <CardTitle class="flex items-center gap-2 text-base">
+        <UploadCloud class="h-4 w-4" />
         Enhanced Payslip Uploader
       </CardTitle>
-      <CardDescription>
+      <CardDescription class="text-xs">
         Drag and drop your payslips below or click to select files.
         Supports PDF, PNG, JPG, JPEG (max {{ maxFileSize }}MB)
       </CardDescription>
     </CardHeader>
-    <CardContent class="space-y-6">
+    <CardContent class="space-y-4">
       <!-- File Drop Zone -->
       <div
         @dragover.prevent="onDragOver"
         @dragleave.prevent="onDragLeave"
         @drop.prevent="onDrop"
         :class="[
-          'relative flex flex-col items-center justify-center p-12 border-2 border-dashed rounded-lg cursor-pointer transition-all duration-200',
+          'relative flex flex-col items-center justify-center p-8 border-2 border-dashed rounded-lg cursor-pointer transition-all duration-200',
           isDragging 
             ? 'border-primary bg-primary/10 scale-[1.02]' 
             : 'border-border hover:border-primary/50 hover:bg-muted/50'
@@ -37,24 +37,24 @@
         <div class="relative">
           <UploadCloud 
             :class="[
-              'w-16 h-16 transition-all duration-300',
+              'w-12 h-12 transition-all duration-300',
               isDragging ? 'text-primary scale-110' : 'text-muted-foreground'
             ]" 
           />
           <div v-if="isDragging" class="absolute inset-0 animate-ping">
-            <UploadCloud class="w-16 h-16 text-primary opacity-75" />
+            <UploadCloud class="w-12 h-12 text-primary opacity-75" />
           </div>
         </div>
         
         <!-- Upload Text -->
-        <div class="mt-4 text-center">
-          <p class="text-lg font-medium">
+        <div class="mt-3 text-center">
+          <p class="text-sm font-medium">
             {{ isDragging ? 'Drop files here' : 'Click or drag files here to upload' }}
           </p>
-          <p class="mt-2 text-sm text-muted-foreground">
+          <p class="mt-1 text-xs text-muted-foreground">
             Supports {{ allowedFileTypes.join(', ').toUpperCase() }} files up to {{ maxFileSize }}MB each
           </p>
-          <p class="mt-1 text-xs text-muted-foreground">
+          <p class="mt-0.5 text-xs text-muted-foreground">
             Multiple files supported • Real-time processing
           </p>
         </div>
@@ -62,11 +62,11 @@
         <!-- Upload Progress Overlay -->
         <div v-if="isUploading" class="absolute inset-0 bg-background/80 flex items-center justify-center rounded-lg">
           <div class="text-center">
-            <LoaderCircle class="w-8 h-8 animate-spin mx-auto text-primary" />
-            <p class="mt-2 text-sm font-medium">Uploading {{ uploadProgress.current }} of {{ uploadProgress.total }}</p>
-            <div class="mt-2 w-32 bg-muted rounded-full h-2">
+            <LoaderCircle class="w-6 h-6 animate-spin mx-auto text-primary" />
+            <p class="mt-2 text-xs font-medium">Uploading {{ uploadProgress.current }} of {{ uploadProgress.total }}</p>
+            <div class="mt-1 w-24 bg-muted rounded-full h-1.5">
               <div 
-                class="bg-primary h-2 rounded-full transition-all duration-300"
+                class="bg-primary h-1.5 rounded-full transition-all duration-300"
                 :style="{ width: uploadProgress.percentage + '%' }"
               ></div>
             </div>
@@ -75,35 +75,35 @@
       </div>
       
       <!-- File Preview Section -->
-      <div v-if="files.length > 0" class="space-y-4">
+      <div v-if="files.length > 0" class="space-y-3">
         <div class="flex items-center justify-between">
-          <h3 class="text-lg font-medium">Selected Files ({{ files.length }})</h3>
+          <h3 class="text-sm font-medium">Selected Files ({{ files.length }})</h3>
           <div class="flex gap-2">
-            <Button variant="outline" size="sm" @click="clearAll" :disabled="isUploading">
-              <Trash2 class="w-4 h-4 mr-2" />
+            <Button variant="outline" size="sm" @click="clearAll" :disabled="isUploading" class="h-7 text-xs">
+              <Trash2 class="w-3 h-3 mr-1.5" />
               Clear All
             </Button>
             <Button 
               @click="uploadFiles" 
               :disabled="isUploading || getPendingFiles().length === 0"
-              class="bg-primary"
+              class="bg-primary h-7 text-xs"
             >
-              <LoaderCircle v-if="isUploading" class="w-4 h-4 mr-2 animate-spin" />
-              <UploadCloud v-else class="w-4 h-4 mr-2" />
+              <LoaderCircle v-if="isUploading" class="w-3 h-3 mr-1.5 animate-spin" />
+              <UploadCloud v-else class="w-3 h-3 mr-1.5" />
               {{ isUploading ? 'Uploading...' : `Upload ${getPendingFiles().length} File(s)` }}
             </Button>
           </div>
         </div>
         
         <!-- File Grid -->
-        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div class="grid grid-cols-5 sm:grid-cols-7 lg:grid-cols-10 gap-2">
           <div
             v-for="file in files"
             :key="file.id"
             class="group relative bg-card border rounded-lg overflow-hidden hover:shadow-md transition-all duration-200"
           >
             <!-- File Preview -->
-            <div class="aspect-[4/3] bg-muted flex items-center justify-center relative">
+            <div class="aspect-square bg-muted flex items-center justify-center relative">
               <!-- Image Preview -->
               <img
                 v-if="file.previewUrl"
@@ -113,8 +113,8 @@
               />
               <!-- PDF Icon -->
               <div v-else class="flex flex-col items-center text-muted-foreground">
-                <FileText class="w-12 h-12" />
-                <span class="text-xs mt-2 font-medium">PDF</span>
+                <FileText class="w-5 h-5" />
+                <span class="text-xs mt-0.5 font-medium">PDF</span>
               </div>
               
               <!-- Status Overlay -->
@@ -127,15 +127,15 @@
                   file.status === 'error' ? 'bg-red-500/80' : ''
                 ]"
               >
-                <LoaderCircle v-if="file.status === 'uploading'" class="w-6 h-6 animate-spin" />
-                <CheckCircle v-else-if="file.status === 'success'" class="w-6 h-6" />
-                <XCircle v-else-if="file.status === 'error'" class="w-6 h-6" />
+                <LoaderCircle v-if="file.status === 'uploading'" class="w-3 h-3 animate-spin" />
+                <CheckCircle v-else-if="file.status === 'success'" class="w-3 h-3" />
+                <XCircle v-else-if="file.status === 'error'" class="w-3 h-3" />
               </div>
               
               <!-- Progress Bar -->
               <div 
                 v-if="file.status === 'uploading'"
-                class="absolute bottom-0 left-0 right-0 h-1 bg-white/20"
+                class="absolute bottom-0 left-0 right-0 h-0.5 bg-white/20"
               >
                 <div 
                   class="h-full bg-white transition-all duration-300"
@@ -144,41 +144,41 @@
               </div>
               
               <!-- Action Buttons -->
-              <div class="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity flex gap-1">
-                <Button variant="secondary" size="icon" class="h-8 w-8" @click.stop="previewFile(file)">
-                  <Eye class="w-4 h-4" />
+              <div class="absolute top-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity flex gap-0.5">
+                <Button variant="secondary" size="icon" class="h-4 w-4" @click.stop="previewFile(file)">
+                  <Eye class="w-2.5 h-2.5" />
                 </Button>
                 <Button 
                   variant="destructive" 
                   size="icon" 
-                  class="h-8 w-8" 
+                  class="h-4 w-4" 
                   @click.stop="removeFile(file.id)"
                   :disabled="file.status === 'uploading'"
                 >
-                  <Trash2 class="w-4 h-4" />
+                  <Trash2 class="w-2.5 h-2.5" />
                 </Button>
               </div>
             </div>
             
             <!-- File Info -->
-            <div class="p-3 border-t bg-card">
-              <p class="font-medium truncate text-sm" :title="file.file.name">
+            <div class="p-1.5 border-t bg-card">
+              <p class="font-medium truncate text-xs leading-tight" :title="file.file.name">
                 {{ file.file.name }}
               </p>
-              <div class="flex items-center justify-between mt-1">
+              <div class="flex items-center justify-between mt-0.5">
                 <p class="text-xs text-muted-foreground">
                   {{ formatFileSize(file.file.size) }}
                 </p>
                 <Badge 
                   :variant="getStatusVariant(file.status)"
-                  class="text-xs"
+                  class="text-xs px-1 py-0"
                 >
                   {{ getStatusText(file.status) }}
                 </Badge>
               </div>
               
               <!-- Error Message -->
-              <p v-if="file.error" class="text-xs text-red-500 mt-1 truncate" :title="file.error">
+              <p v-if="file.error" class="text-xs text-red-500 mt-0.5 truncate" :title="file.error">
                 {{ file.error }}
               </p>
             </div>
@@ -187,21 +187,21 @@
       </div>
       
       <!-- Upload Statistics -->
-      <div v-if="uploadStats.total > 0" class="grid grid-cols-2 md:grid-cols-4 gap-4 p-4 bg-muted/50 rounded-lg">
+      <div v-if="uploadStats.total > 0" class="grid grid-cols-2 md:grid-cols-4 gap-3 p-3 bg-muted/50 rounded-lg">
         <div class="text-center">
-          <div class="text-2xl font-bold text-blue-600">{{ uploadStats.total }}</div>
+          <div class="text-lg font-bold text-blue-600">{{ uploadStats.total }}</div>
           <div class="text-xs text-muted-foreground">Total Files</div>
         </div>
         <div class="text-center">
-          <div class="text-2xl font-bold text-green-600">{{ uploadStats.success }}</div>
+          <div class="text-lg font-bold text-green-600">{{ uploadStats.success }}</div>
           <div class="text-xs text-muted-foreground">Successful</div>
         </div>
         <div class="text-center">
-          <div class="text-2xl font-bold text-red-600">{{ uploadStats.failed }}</div>
+          <div class="text-lg font-bold text-red-600">{{ uploadStats.failed }}</div>
           <div class="text-xs text-muted-foreground">Failed</div>
         </div>
         <div class="text-center">
-          <div class="text-2xl font-bold text-orange-600">{{ uploadStats.pending }}</div>
+          <div class="text-lg font-bold text-orange-600">{{ uploadStats.pending }}</div>
           <div class="text-xs text-muted-foreground">Pending</div>
         </div>
       </div>
@@ -212,12 +212,12 @@
   <Dialog v-model:open="isPreviewOpen">
     <DialogContent class="max-w-4xl max-h-[90vh] overflow-auto">
       <DialogHeader>
-        <DialogTitle>File Preview</DialogTitle>
-        <DialogDescription v-if="fileToPreview">
+        <DialogTitle class="text-base">File Preview</DialogTitle>
+        <DialogDescription v-if="fileToPreview" class="text-xs">
           {{ fileToPreview.file.name }} ({{ formatFileSize(fileToPreview.file.size) }})
         </DialogDescription>
       </DialogHeader>
-      <div v-if="fileToPreview" class="mt-4">
+      <div v-if="fileToPreview" class="mt-3">
         <img
           v-if="fileToPreview.previewUrl"
           :src="fileToPreview.previewUrl"
@@ -226,9 +226,9 @@
         />
         <div v-else class="flex items-center justify-center h-96 bg-muted rounded">
           <div class="text-center text-muted-foreground">
-            <FileText class="w-16 h-16 mx-auto mb-4" />
-            <p>PDF Preview Not Available</p>
-            <p class="text-sm">File will be processed after upload</p>
+            <FileText class="w-12 h-12 mx-auto mb-3" />
+            <p class="text-sm">PDF Preview Not Available</p>
+            <p class="text-xs">File will be processed after upload</p>
           </div>
         </div>
       </div>

@@ -4,6 +4,7 @@ namespace App\Console\Commands;
 
 use App\Models\Payslip;
 use App\Jobs\ProcessPayslip;
+use App\Services\PayslipProcessingService;
 use Illuminate\Console\Command;
 
 class ReprocessPayslips extends Command
@@ -42,6 +43,8 @@ class ReprocessPayslips extends Command
         $bar = $this->output->createProgressBar($payslips->count());
         $bar->start();
         
+        $processingService = app(PayslipProcessingService::class);
+        
         foreach ($payslips as $payslip) {
             // Reset status to queued and clear old data
             $payslip->update([
@@ -50,15 +53,20 @@ class ReprocessPayslips extends Command
                 'error_message' => null,
             ]);
             
-            // Re-dispatch the job
-            ProcessPayslip::dispatch($payslip);
+            // Process using the new mode-aware service
+            try {
+                $result = $processingService->processPayslipWithMode($payslip);
+                $this->line("  Payslip {$payslip->id}: " . ($result['status'] ?? 'completed'));
+            } catch (\Exception $e) {
+                $this->error("  Payslip {$payslip->id}: Failed - " . $e->getMessage());
+            }
             
             $bar->advance();
         }
         
         $bar->finish();
         $this->newLine();
-        $this->info("Successfully queued {$payslips->count()} payslips for reprocessing.");
+        $this->info("Successfully processed {$payslips->count()} payslips for reprocessing.");
         $this->info('Check the queue status in your dashboard to see the progress.');
     }
 } 

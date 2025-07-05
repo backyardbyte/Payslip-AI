@@ -26,11 +26,20 @@ class WhatsAppBotService
         $this->phoneNumberId = config('services.whatsapp.phone_number_id');
         $this->webhookVerifyToken = config('services.whatsapp.webhook_verify_token');
         
+        // Only throw exception if actively trying to use the service
+        if ($this->accessToken && $this->phoneNumberId) {
+            $this->baseApiUrl = "https://graph.facebook.com/v18.0/{$this->phoneNumberId}";
+        }
+    }
+
+    /**
+     * Validate that the service is properly configured
+     */
+    private function validateConfiguration(): void
+    {
         if (!$this->accessToken || !$this->phoneNumberId) {
             throw new \Exception('WhatsApp Bot credentials not configured');
         }
-
-        $this->baseApiUrl = "https://graph.facebook.com/v18.0/{$this->phoneNumberId}";
     }
 
     /**
@@ -65,6 +74,8 @@ class WhatsAppBotService
      */
     public function processWebhookUpdate(array $data): void
     {
+        $this->validateConfiguration();
+        
         if (!isset($data['entry'])) {
             return;
         }
@@ -461,6 +472,8 @@ class WhatsAppBotService
      */
     public function sendTextMessage(string $to, string $text): bool
     {
+        $this->validateConfiguration();
+        
         $message = [
             'messaging_product' => 'whatsapp',
             'to' => $to,
@@ -646,35 +659,59 @@ class WhatsAppBotService
 
         try {
             if ($payslip->status === 'completed' && !empty($eligibilityResults)) {
-                $text = "✅ *Analisis Slip Gaji Selesai!*\n\n";
-                $text .= "📊 ID: {$payslip->id}\n";
-                $text .= "📄 Status: Berjaya diproses\n\n";
-                $text .= "🏦 *Keputusan Kelayakan Koperasi:*\n\n";
+                // Filter to show only eligible koperasi
+                $eligibleKoperasi = collect($eligibilityResults)->filter(function($result) {
+                    return $result['eligible'] === true;
+                })->toArray();
 
-                $eligibleCount = 0;
-                foreach ($eligibilityResults as $result) {
-                    $icon = $result['eligible'] ? '✅' : '❌';
-                    $text .= "{$icon} *{$result['koperasi_name']}*\n";
-                    
-                    if ($result['eligible']) {
-                        $eligibleCount++;
-                        $text .= "   🎉 Layak untuk memohon!\n";
-                    } else {
-                        $text .= "   📋 Sebab: " . implode(', ', $result['reasons']) . "\n";
+                if (!empty($eligibleKoperasi)) {
+                    $eligibleCount = count($eligibleKoperasi);
+                    $text = "🎉 *Berita Gembira! Anda layak untuk koperasi:*\n\n";
+                    $text .= "📊 ID: {$payslip->id}\n";
+                    $text .= "📄 Status: Berjaya diproses\n\n";
+                    $text .= "🏦 *Koperasi Yang Anda Layak:*\n\n";
+
+                    foreach ($eligibleKoperasi as $result) {
+                        $text .= "✅ *{$result['koperasi_name']}*\n";
+                        $text .= "   🎯 Status: Anda layak memohon!\n";
+                        
+                        // Show positive reasons
+                        if (!empty($result['reasons'])) {
+                            $mainReason = $result['reasons'][0];
+                            $text .= "   💡 " . $mainReason . "\n";
+                        }
+                        $text .= "\n";
                     }
-                    $text .= "\n";
-                }
 
-                $text .= "📈 *Ringkasan:*\n";
-                $text .= "✅ Layak: {$eligibleCount} koperasi\n";
-                $text .= "📊 Jumlah disemak: " . count($eligibilityResults) . " koperasi\n\n";
-                $text .= "Terima kasih kerana menggunakan perkhidmatan kami! 🙏";
+                    $text .= "📈 *Ringkasan:*\n";
+                    $text .= "✅ Anda layak untuk {$eligibleCount} koperasi\n\n";
+                    $text .= "🚀 Sedia untuk langkah seterusnya? Penasihat kewangan kami boleh membantu proses permohonan!\n\n";
+                    $text .= "📞 *Hubungi Penasihat Kewangan:*\n";
+                    $text .= "• Telefon: +60 12-345 6789\n";
+                    $text .= "• WhatsApp: +60 12-345 6789\n";
+                    $text .= "• Email: advisor@weclaim.com\n\n";
+                    $text .= "💡 Nyatakan ID slip gaji anda: #{$payslip->id}\n\n";
+                    $text .= "Terima kasih kerana menggunakan perkhidmatan kami! 🙏";
+                } else {
+                    $text = "😔 *Tiada Koperasi Yang Layak*\n\n";
+                    $text .= "📊 ID: {$payslip->id}\n";
+                    $text .= "📄 Status: Berjaya diproses\n\n";
+                    $text .= "Malangnya, berdasarkan data slip gaji semasa, anda belum memenuhi syarat kelayakan untuk mana-mana koperasi.\n\n";
+                    $text .= "💡 *Tips untuk meningkatkan kelayakan:*\n";
+                    $text .= "• Semak peratus gaji bersih dalam had yang diperlukan\n";
+                    $text .= "• Pastikan semua data slip gaji diekstrak dengan betul\n";
+                    $text .= "• Cuba lagi bulan depan jika gaji berubah\n\n";
+                    $text .= "Terima kasih! 🙏";
+                }
 
             } elseif ($payslip->status === 'failed') {
                 $text = "❌ *Ralat Memproses Slip Gaji*\n\n";
                 $text .= "📊 ID: {$payslip->id}\n";
                 $text .= "📄 Status: Gagal diproses\n\n";
                 $text .= "Sila cuba lagi dengan slip gaji yang lebih jelas atau hubungi sokongan teknikal.\n\n";
+                $text .= "Terima kasih! 🙏";
+            } else {
+                $text = "⚠️ Tidak dapat menyemak kelayakan koperasi. Sila semak jika data slip gaji diekstrak dengan betul.\n\n";
                 $text .= "Terima kasih! 🙏";
             }
 

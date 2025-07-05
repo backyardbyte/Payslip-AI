@@ -4,56 +4,48 @@
     <AppLayout>
         <div class="flex flex-col h-full gap-6 p-4 sm:p-6">
                 <!-- Statistics Cards -->
-                <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
-                    <Card>
-                        <CardContent>
-                            <div class="flex items-center space-x-2">
-                                <div class="p-2 bg-blue-100 rounded-lg dark:bg-blue-900/50">
-                                    <Landmark class="h-5 w-5 text-blue-600 dark:text-blue-400" />
-                                </div>
+                <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
+                    <Card class="bg-gradient-to-r from-blue-500 to-blue-600 text-white">
+                        <CardContent class="p-3">
+                            <div class="flex items-center justify-between">
                                 <div>
-                                    <p class="text-sm text-muted-foreground">Total Koperasi</p>
-                                    <p class="text-2xl font-bold">{{ koperasi.length }}</p>
+                                    <p class="text-blue-100 text-xs">Total Koperasi</p>
+                                    <p class="text-xl font-bold">{{ koperasi.length }}</p>
                                 </div>
+                                <Landmark class="h-6 w-6 text-blue-200" />
                             </div>
                         </CardContent>
                     </Card>
-                    <Card>
-                        <CardContent>
-                            <div class="flex items-center space-x-2">
-                                <div class="p-2 bg-green-100 rounded-lg dark:bg-green-900/50">
-                                    <CheckCircle class="h-5 w-5 text-green-600 dark:text-green-400" />
-                                </div>
+                    <Card class="bg-gradient-to-r from-green-500 to-green-600 text-white">
+                        <CardContent class="p-3">
+                            <div class="flex items-center justify-between">
                                 <div>
-                                    <p class="text-sm text-muted-foreground">Active</p>
-                                    <p class="text-2xl font-bold">{{ activeKoperasi.length }}</p>
+                                    <p class="text-green-100 text-xs">Active</p>
+                                    <p class="text-xl font-bold">{{ activeKoperasi.length }}</p>
                                 </div>
+                                <CheckCircle class="h-6 w-6 text-green-200" />
                             </div>
                         </CardContent>
                     </Card>
-                    <Card>
-                        <CardContent>
-                            <div class="flex items-center space-x-2">
-                                <div class="p-2 bg-red-100 rounded-lg dark:bg-red-900/50">
-                                    <XCircle class="h-5 w-5 text-red-600 dark:text-red-400" />
-                                </div>
+                    <Card class="bg-gradient-to-r from-red-500 to-red-600 text-white">
+                        <CardContent class="p-3">
+                            <div class="flex items-center justify-between">
                                 <div>
-                                    <p class="text-sm text-muted-foreground">Inactive</p>
-                                    <p class="text-2xl font-bold">{{ inactiveKoperasi.length }}</p>
+                                    <p class="text-red-100 text-xs">Inactive</p>
+                                    <p class="text-xl font-bold">{{ inactiveKoperasi.length }}</p>
                                 </div>
+                                <XCircle class="h-6 w-6 text-red-200" />
                             </div>
                         </CardContent>
                     </Card>
-                    <Card>
-                        <CardContent>
-                            <div class="flex items-center space-x-2">
-                                <div class="p-2 bg-purple-100 rounded-lg dark:bg-purple-900/50">
-                                    <TrendingUp class="h-5 w-5 text-purple-600 dark:text-purple-400" />
-                                </div>
+                    <Card class="bg-gradient-to-r from-purple-500 to-purple-600 text-white">
+                        <CardContent class="p-3">
+                            <div class="flex items-center justify-between">
                                 <div>
-                                    <p class="text-sm text-muted-foreground">Avg Max Rate</p>
-                                    <p class="text-2xl font-bold">{{ averageMaxRate }}%</p>
+                                    <p class="text-purple-100 text-xs">Avg Max Rate</p>
+                                    <p class="text-xl font-bold">{{ averageMaxRate }}%</p>
                                 </div>
+                                <TrendingUp class="h-6 w-6 text-purple-200" />
                             </div>
                         </CardContent>
                     </Card>
@@ -73,13 +65,13 @@
                         </p>
                     </div>
                     <div class="flex gap-2">
-                        <Button variant="outline" size="sm" @click="refreshData" :disabled="isLoading">
-                            <RefreshCw :class="['h-4 w-4 mr-2', isLoading && 'animate-spin']" />
+                        <Button variant="outline" size="sm" @click="refreshData" :disabled="isLoading" class="h-7 text-xs">
+                            <RefreshCw :class="['h-3 w-3 mr-1.5', isLoading && 'animate-spin']" />
                             Refresh
                         </Button>
                         <PermissionGuard permission="koperasi.create">
-                            <Button size="sm" @click="openAddModal">
-                                <Plus class="h-4 w-4 mr-2" />
+                            <Button size="sm" @click="openAddModal" class="h-7 text-xs">
+                                <Plus class="h-3 w-3 mr-1.5" />
                                 Add Koperasi
                             </Button>
                         </PermissionGuard>
@@ -88,16 +80,16 @@
 
                 <!-- Search and Filter -->
                 <Card>
-                    <CardContent class="p-4">
-                        <div class="flex flex-col sm:flex-row gap-4">
+                    <CardContent class="p-3">
+                        <div class="flex flex-col sm:flex-row gap-3">
                             <div class="flex-1">
                                 <div class="relative">
-                                    <Search class="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                                    <Search class="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
                                     <input
                                         v-model="searchQuery"
                                         type="text"
                                         placeholder="Search koperasi by name..."
-                                        class="w-full pl-10 pr-4 py-2 border border-input rounded-md bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                                        class="w-full pl-8 pr-3 py-1.5 border border-input rounded-md bg-background text-xs focus:outline-none focus:ring-1 focus:ring-ring"
                                     />
                                 </div>
                             </div>
@@ -107,6 +99,7 @@
                                     size="sm" 
                                     :class="statusFilter === 'all' ? 'bg-primary text-primary-foreground' : ''"
                                     @click="statusFilter = 'all'"
+                                    class="h-7 text-xs"
                                 >
                                     All
                                 </Button>
@@ -115,6 +108,7 @@
                                     size="sm"
                                     :class="statusFilter === 'active' ? 'bg-green-600 text-white' : ''"
                                     @click="statusFilter = 'active'"
+                                    class="h-7 text-xs"
                                 >
                                     Active
                                 </Button>
@@ -123,6 +117,7 @@
                                     size="sm"
                                     :class="statusFilter === 'inactive' ? 'bg-red-600 text-white' : ''"
                                     @click="statusFilter = 'inactive'"
+                                    class="h-7 text-xs"
                                 >
                                     Inactive
                                 </Button>
@@ -133,55 +128,55 @@
 
                 <!-- Koperasi List -->
                 <Card class="flex-1">
-                    <CardHeader>
+                    <CardHeader class="pb-3">
                         <div class="flex items-center justify-between">
                             <div>
-                                <CardTitle>Koperasi Registry</CardTitle>
-                                <CardDescription>
+                                <CardTitle class="text-base">Koperasi Registry</CardTitle>
+                                <CardDescription class="text-xs">
                                     {{ filteredKoperasi.length }} of {{ koperasi.length }} koperasi shown
                                 </CardDescription>
                             </div>
                             <div class="flex items-center gap-2">
-                                <Button variant="ghost" size="icon" @click="viewMode = 'grid'" :class="viewMode === 'grid' ? 'bg-muted' : ''">
-                                    <LayoutGrid class="h-4 w-4" />
+                                <Button variant="ghost" size="icon" @click="viewMode = 'grid'" :class="viewMode === 'grid' ? 'bg-muted' : ''" class="h-7 w-7">
+                                    <LayoutGrid class="h-3 w-3" />
                                 </Button>
-                                <Button variant="ghost" size="icon" @click="viewMode = 'table'" :class="viewMode === 'table' ? 'bg-muted' : ''">
-                                    <TableIcon class="h-4 w-4" />
+                                <Button variant="ghost" size="icon" @click="viewMode = 'table'" :class="viewMode === 'table' ? 'bg-muted' : ''" class="h-7 w-7">
+                                    <TableIcon class="h-3 w-3" />
                                 </Button>
                             </div>
                         </div>
                     </CardHeader>
                     <CardContent>
                         <!-- Grid View -->
-                        <div v-if="viewMode === 'grid'" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                        <div v-if="viewMode === 'grid'" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                             <Card v-for="item in filteredKoperasi" :key="item.id" class="group hover:shadow-md transition-shadow">
-                                <CardHeader class="pb-3">
+                                <CardHeader class="pb-2">
                                     <div class="flex items-start justify-between">
                                         <div class="flex items-center space-x-2">
                                             <div :class="['w-3 h-3 rounded-full', item.is_active ? 'bg-green-500' : 'bg-red-500']"></div>
-                                            <CardTitle class="text-lg">{{ item.name }}</CardTitle>
+                                            <CardTitle class="text-sm">{{ item.name }}</CardTitle>
                                         </div>
                                         <PermissionGuard :permissions="['koperasi.update', 'koperasi.delete']">
                                             <DropdownMenu>
                                                 <DropdownMenuTrigger asChild>
-                                                    <Button variant="ghost" size="icon" class="opacity-0 group-hover:opacity-100 transition-opacity">
-                                                        <MoreHorizontal class="h-4 w-4" />
+                                                    <Button variant="ghost" size="icon" class="opacity-0 group-hover:opacity-100 transition-opacity h-6 w-6">
+                                                        <MoreHorizontal class="h-3 w-3" />
                                                     </Button>
                                                 </DropdownMenuTrigger>
                                                 <DropdownMenuContent align="end">
                                                     <PermissionGuard permission="koperasi.update">
                                                         <DropdownMenuItem @click="openEditModal(item)">
-                                                            <Edit class="h-4 w-4 mr-2" />
+                                                            <Edit class="h-3 w-3 mr-2" />
                                                             Edit
                                                         </DropdownMenuItem>
                                                         <DropdownMenuItem @click="duplicateKoperasi(item)">
-                                                            <Copy class="h-4 w-4 mr-2" />
+                                                            <Copy class="h-3 w-3 mr-2" />
                                                             Duplicate
                                                         </DropdownMenuItem>
                                                     </PermissionGuard>
                                                     <PermissionGuard permission="koperasi.delete">
                                                         <DropdownMenuItem class="text-red-600" @click="confirmDelete(item)">
-                                                            <Trash2 class="h-4 w-4 mr-2" />
+                                                            <Trash2 class="h-3 w-3 mr-2" />
                                                             Delete
                                                         </DropdownMenuItem>
                                                     </PermissionGuard>
@@ -189,8 +184,8 @@
                                             </DropdownMenu>
                                         </PermissionGuard>
                                     </div>
-                                    <div class="mt-2">
-                                        <span :class="['px-2 py-1 text-xs font-medium rounded-full', item.is_active ? 'bg-green-100 text-green-800 dark:bg-green-900/50 dark:text-green-400' : 'bg-red-100 text-red-800 dark:bg-red-900/50 dark:text-red-400']">
+                                    <div class="mt-1">
+                                        <span :class="['px-2 py-0.5 text-xs font-medium rounded-full', item.is_active ? 'bg-green-100 text-green-800 dark:bg-green-900/50 dark:text-green-400' : 'bg-red-100 text-red-800 dark:bg-red-900/50 dark:text-red-400']">
                                             {{ item.is_active ? 'Active' : 'Inactive' }}
                                         </span>
                                     </div>

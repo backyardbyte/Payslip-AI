@@ -43,7 +43,8 @@ class TelegramBotController extends ApiResponseController
                 'name' => $k->name,
                 'rules' => $k->rules,
                 'updated_at' => $k->updated_at->toISOString(),
-                'max_percentage' => $k->rules['max_peratus_gaji_bersih'] ?? null,
+                'min_take_home_percentage' => $k->rules['min_peratus_gaji_bersih'] ?? null,
+                'max_debt_service_ratio' => $k->rules['max_debt_service_ratio'] ?? null,
                 'min_salary' => $k->rules['min_gaji_pokok'] ?? null,
                 'max_age' => $k->rules['max_umur'] ?? null,
             ];
@@ -108,7 +109,8 @@ class TelegramBotController extends ApiResponseController
                 'is_eligible' => $eligibility['eligible'],
                 'reasons' => $eligibility['reasons'],
                 'percentage_used' => $data['peratus_gaji_bersih'],
-                'max_percentage_allowed' => $koperasi->rules['max_peratus_gaji_bersih'] ?? null,
+                'min_take_home_required' => $koperasi->rules['min_peratus_gaji_bersih'] ?? null,
+                'max_debt_service_ratio' => $koperasi->rules['max_debt_service_ratio'] ?? null,
             ];
         }
 
@@ -312,47 +314,38 @@ class TelegramBotController extends ApiResponseController
     }
 
     /**
-     * Private method to check koperasi eligibility
+     * Private method to check koperasi eligibility based only on peratus gaji bersih
      */
     private function checkKoperasiEligibility(array $data, array $rules): array
     {
         $eligible = true;
         $reasons = [];
+        $percentage = $data['peratus_gaji_bersih'];
 
-        // Check maximum percentage of net salary
-        if (isset($rules['max_peratus_gaji_bersih'])) {
-            if ($data['peratus_gaji_bersih'] > $rules['max_peratus_gaji_bersih']) {
+        // Check minimum take-home percentage requirement (only criteria)
+        if (isset($rules['min_peratus_gaji_bersih'])) {
+            if ($percentage >= $rules['min_peratus_gaji_bersih']) {
+                $eligible = true;
+                $reasons[] = "✅ ELIGIBLE: Take-home percentage ({$percentage}%) meets minimum requirement ({$rules['min_peratus_gaji_bersih']}%)";
+                
+                // Add financial standing assessment
+                if ($percentage >= 85) {
+                    $reasons[] = "🌟 Excellent financial standing";
+                } elseif ($percentage >= 75) {
+                    $reasons[] = "⭐ Very good financial standing";
+                } elseif ($percentage >= 65) {
+                    $reasons[] = "👍 Good financial standing";
+                } else {
+                    $reasons[] = "✓ Acceptable financial standing";
+                }
+            } else {
                 $eligible = false;
-                $reasons[] = "Percentage of net salary ({$data['peratus_gaji_bersih']}%) exceeds maximum allowed ({$rules['max_peratus_gaji_bersih']}%)";
+                $reasons[] = "❌ NOT ELIGIBLE: Take-home percentage ({$percentage}%) is below minimum requirement ({$rules['min_peratus_gaji_bersih']}%)";
+                $reasons[] = "💡 You need at least {$rules['min_peratus_gaji_bersih']}% take-home to qualify";
             }
-        }
-
-        // Check minimum basic salary
-        if (isset($rules['min_gaji_pokok'])) {
-            if ($data['gaji_pokok'] < $rules['min_gaji_pokok']) {
-                $eligible = false;
-                $reasons[] = "Basic salary (RM {$data['gaji_pokok']}) is below minimum required (RM {$rules['min_gaji_pokok']})";
-            }
-        }
-
-        // Check maximum age
-        if (isset($rules['max_umur']) && isset($data['umur'])) {
-            if ($data['umur'] > $rules['max_umur']) {
-                $eligible = false;
-                $reasons[] = "Age ({$data['umur']}) exceeds maximum allowed ({$rules['max_umur']})";
-            }
-        }
-
-        // Check minimum net salary
-        if (isset($rules['min_gaji_bersih'])) {
-            if ($data['gaji_bersih'] < $rules['min_gaji_bersih']) {
-                $eligible = false;
-                $reasons[] = "Net salary (RM {$data['gaji_bersih']}) is below minimum required (RM {$rules['min_gaji_bersih']})";
-            }
-        }
-
-        if ($eligible) {
-            $reasons[] = "Meets all eligibility criteria";
+        } else {
+            $eligible = false;
+            $reasons[] = "❌ No eligibility criteria defined for this koperasi";
         }
 
         return [

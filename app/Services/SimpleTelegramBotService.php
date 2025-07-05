@@ -416,11 +416,13 @@ class SimpleTelegramBotService
                 ],
             ]);
             
-            // Dispatch processing job
-            ProcessPayslip::dispatch($payslip);
+            // Process payslip using the new mode-aware service
+            $processingService = app(\App\Services\PayslipProcessingService::class);
+            $result = $processingService->processPayslipWithMode($payslip);
             
             $text = "✅ Your payslip has been uploaded successfully!\n\n";
             $text .= "📋 Payslip ID: #{$payslip->id}\n";
+            $text .= "🔄 Processing Status: " . ($result['status'] ?? 'completed') . "\n";
             $text .= "⏳ Status: Processing\n\n";
             $text .= "You will receive the results here when processing is complete. This usually takes 1-3 minutes.\n\n";
             $text .= "Use /status to check your recent payslips.";
@@ -487,6 +489,9 @@ class SimpleTelegramBotService
                 $this->setState($chatId, self::STATE_NONE);
                 $this->sendMessage($chatId, "❌ Scan cancelled. Returning to main menu.");
                 $this->handleStart($chatId);
+            } elseif (str_starts_with($data, 'contact_advisor_')) {
+                $payslipId = str_replace('contact_advisor_', '', $data);
+                $this->handleContactAdvisor($chatId, $payslipId);
             }
         } catch (\Exception $e) {
             Log::error("Callback error: " . $e->getMessage());
@@ -521,6 +526,43 @@ class SimpleTelegramBotService
             'failed' => '❌',
             default => '❓'
         };
+    }
+
+    /**
+     * Handle contact advisor request
+     */
+    private function handleContactAdvisor(int $chatId, string $payslipId): void
+    {
+        $text = "👨‍💼 *Financial Advisor Contact*\n\n";
+        $text .= "🎉 Great choice! Our financial advisor is ready to help you with your koperasi application.\n\n";
+        $text .= "📞 *Contact Information:*\n";
+        $text .= "• Phone: +60 12-345 6789\n";
+        $text .= "• WhatsApp: +60 12-345 6789\n";
+        $text .= "• Email: advisor@weclaim.com\n";
+        $text .= "• Telegram: @WeclaimAdvisor\n\n";
+        $text .= "🕒 *Office Hours:*\n";
+        $text .= "• Monday - Friday: 9:00 AM - 6:00 PM\n";
+        $text .= "• Saturday: 9:00 AM - 1:00 PM\n";
+        $text .= "• Sunday: Closed\n\n";
+        $text .= "💡 *What to mention:*\n";
+        $text .= "• Your Payslip ID: #{$payslipId}\n";
+        $text .= "• That you're eligible for koperasi application\n";
+        $text .= "• Your preferred koperasi choice\n\n";
+        $text .= "Our advisor will guide you through the application process and help you get the best terms! 🚀";
+
+        // Add contact buttons
+        $inlineKeyboard = new InlineKeyboardMarkup([
+            [
+                ['text' => '📞 Call Now', 'url' => 'tel:+60123456789'],
+                ['text' => '💬 WhatsApp', 'url' => 'https://wa.me/60123456789']
+            ],
+            [
+                ['text' => '📧 Send Email', 'url' => 'mailto:advisor@weclaim.com'],
+                ['text' => '📱 Telegram', 'url' => 'https://t.me/WeclaimAdvisor']
+            ]
+        ]);
+
+        $this->sendMessage($chatId, $text, 'Markdown', $inlineKeyboard);
     }
     
     /**
@@ -568,41 +610,58 @@ class SimpleTelegramBotService
                     $text .= "\n";
                 }
                 
-                // Add koperasi eligibility results
+                // Filter and show only eligible koperasi
                 if (!empty($eligibilityResults)) {
-                    $eligibleCount = 0;
-                    $text .= "🏦 *Koperasi Eligibility Results:*\n\n";
+                    $eligibleKoperasi = collect($eligibilityResults)->filter(function($result) {
+                        return $result['eligible'] === true;
+                    })->toArray();
                     
-                    foreach ($eligibilityResults as $result) {
-                        $icon = $result['eligible'] ? '✅' : '❌';
-                        $text .= "{$icon} *{$result['koperasi_name']}*\n";
+                    if (!empty($eligibleKoperasi)) {
+                        $eligibleCount = count($eligibleKoperasi);
+                        $text .= "🎉 *Great News! You are eligible for koperasi:*\n\n";
                         
-                        if ($result['eligible']) {
-                            $eligibleCount++;
-                            $text .= "   Status: Eligible\n";
-                        } else {
-                            $text .= "   Status: Not Eligible\n";
+                        foreach ($eligibleKoperasi as $result) {
+                            $text .= "✅ *{$result['koperasi_name']}*\n";
+                            $text .= "   🎯 Status: You qualify for this koperasi!\n";
+                            
+                            // Show positive reasons
+                            if (!empty($result['reasons'])) {
+                                $mainReason = $result['reasons'][0];
+                                $text .= "   💡 " . $mainReason . "\n";
+                            }
+                            $text .= "\n";
                         }
                         
-                        // Show main reason
-                        if (!empty($result['reasons'])) {
-                            $mainReason = $result['reasons'][0];
-                            $text .= "   Reason: " . $mainReason . "\n";
-                        }
-                        $text .= "\n";
+                        $text .= "📊 *Summary:* You are eligible for {$eligibleCount} koperasi\n\n";
+                        $text .= "🚀 Ready to take the next step? Our financial advisor can help you with the application process!";
+                    } else {
+                        $text .= "😔 *No Eligible Koperasi Found*\n\n";
+                        $text .= "Unfortunately, based on your current payslip data, you don't meet the eligibility requirements for any koperasi at this time.\n\n";
+                        $text .= "💡 *Tips to improve eligibility:*\n";
+                        $text .= "• Check if your salary percentage is within required limits\n";
+                        $text .= "• Ensure all payslip data was extracted correctly\n";
+                        $text .= "• Consider trying again next month if your salary changes\n\n";
                     }
-                    
-                    // Summary
-                    $totalKoperasi = count($eligibilityResults);
-                    $text .= "📊 *Summary:* {$eligibleCount} out of {$totalKoperasi} koperasi eligible\n\n";
                 } else {
                     $text .= "⚠️ Unable to check koperasi eligibility. Please check if the payslip data was extracted correctly.\n\n";
+                    $eligibleKoperasi = []; // Initialize for inline keyboard logic
                 }
                 
-                $text .= "💡 Use /status to view your payslip history or /scan to analyze another payslip.";
+                $text .= "\n💡 Use /status to view your payslip history or /scan to analyze another payslip.";
             }
             
-            $this->sendMessage($chatId, $text, 'Markdown');
+            // Add inline keyboard for contacting financial advisor if eligible for any koperasi
+            $replyMarkup = null;
+            if (!empty($eligibleKoperasi)) {
+                $inlineKeyboard = new InlineKeyboardMarkup([
+                    [
+                        ['text' => '💬 Contact Financial Advisor', 'callback_data' => 'contact_advisor_' . $payslip->id]
+                    ]
+                ]);
+                $replyMarkup = $inlineKeyboard;
+            }
+            
+            $this->sendMessage($chatId, $text, 'Markdown', $replyMarkup);
             
             Log::info("Sent processing result to Telegram", [
                 'payslip_id' => $payslip->id,

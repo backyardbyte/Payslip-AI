@@ -4,6 +4,7 @@ namespace App\Console\Commands;
 
 use App\Models\Payslip;
 use App\Jobs\ProcessPayslip;
+use App\Services\PayslipProcessingService;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Storage;
 use Spatie\PdfToText\Pdf;
@@ -120,10 +121,17 @@ class TestPayslipProcessing extends Command
         ]);
         
         // Dispatch the job
-        ProcessPayslip::dispatch($payslip);
+        $processingService = app(PayslipProcessingService::class);
         
-        $this->info("✅ Job dispatched for payslip ID: {$payslip->id}");
-        $this->info("Check the logs and database for results");
+        try {
+            $result = $processingService->processPayslipWithMode($payslip);
+            $this->info("✅ Processing completed for payslip ID: {$payslip->id}");
+            $this->info("Status: " . ($result['status'] ?? 'completed'));
+            $this->info("Check the logs and database for detailed results");
+        } catch (\Exception $e) {
+            $this->error("❌ Processing failed for payslip ID: {$payslip->id}");
+            $this->error("Error: " . $e->getMessage());
+        }
         
         return 0;
     }

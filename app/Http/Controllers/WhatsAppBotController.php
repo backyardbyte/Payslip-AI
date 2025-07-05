@@ -43,7 +43,8 @@ class WhatsAppBotController extends ApiResponseController
                 'name' => $k->name,
                 'rules' => $k->rules,
                 'updated_at' => $k->updated_at->toISOString(),
-                'max_percentage' => $k->rules['max_peratus_gaji_bersih'] ?? null,
+                'min_take_home_percentage' => $k->rules['min_peratus_gaji_bersih'] ?? null,
+                'max_debt_service_ratio' => $k->rules['max_debt_service_ratio'] ?? null,
                 'min_salary' => $k->rules['min_gaji_pokok'] ?? null,
                 'max_age' => $k->rules['max_umur'] ?? null,
             ];
@@ -108,7 +109,8 @@ class WhatsAppBotController extends ApiResponseController
                 'is_eligible' => $eligibility['eligible'],
                 'reasons' => $eligibility['reasons'],
                 'percentage_used' => $data['peratus_gaji_bersih'],
-                'max_percentage_allowed' => $koperasi->rules['max_peratus_gaji_bersih'] ?? null,
+                'min_take_home_required' => $koperasi->rules['min_peratus_gaji_bersih'] ?? null,
+                'max_debt_service_ratio' => $koperasi->rules['max_debt_service_ratio'] ?? null,
             ];
         }
 
@@ -317,43 +319,38 @@ class WhatsAppBotController extends ApiResponseController
     }
 
     /**
-     * Private method to check koperasi eligibility
+     * Private method to check koperasi eligibility based only on peratus gaji bersih
      */
     private function checkKoperasiEligibility(array $data, array $rules): array
     {
         $eligible = true;
         $reasons = [];
+        $percentage = $data['peratus_gaji_bersih'];
 
-        // Check maximum percentage of net salary
-        if (isset($rules['max_peratus_gaji_bersih'])) {
-            if ($data['peratus_gaji_bersih'] > $rules['max_peratus_gaji_bersih']) {
+        // Check minimum take-home percentage requirement (only criteria)
+        if (isset($rules['min_peratus_gaji_bersih'])) {
+            if ($percentage >= $rules['min_peratus_gaji_bersih']) {
+                $eligible = true;
+                $reasons[] = "✅ LAYAK: Peratus gaji bersih ({$percentage}%) memenuhi keperluan minimum ({$rules['min_peratus_gaji_bersih']}%)";
+                
+                // Add financial standing assessment
+                if ($percentage >= 85) {
+                    $reasons[] = "🌟 Kedudukan kewangan cemerlang";
+                } elseif ($percentage >= 75) {
+                    $reasons[] = "⭐ Kedudukan kewangan sangat baik";
+                } elseif ($percentage >= 65) {
+                    $reasons[] = "👍 Kedudukan kewangan baik";
+                } else {
+                    $reasons[] = "✓ Kedudukan kewangan diterima";
+                }
+            } else {
                 $eligible = false;
-                $reasons[] = "Peratus gaji bersih ({$data['peratus_gaji_bersih']}%) melebihi had maksimum ({$rules['max_peratus_gaji_bersih']}%)";
+                $reasons[] = "❌ TIDAK LAYAK: Peratus gaji bersih ({$percentage}%) kurang dari keperluan minimum ({$rules['min_peratus_gaji_bersih']}%)";
+                $reasons[] = "💡 Anda perlu sekurang-kurangnya {$rules['min_peratus_gaji_bersih']}% gaji bersih untuk layak";
             }
-        }
-
-        // Check minimum basic salary
-        if (isset($rules['min_gaji_pokok'])) {
-            if ($data['gaji_pokok'] < $rules['min_gaji_pokok']) {
-                $eligible = false;
-                $reasons[] = "Gaji pokok (RM{$data['gaji_pokok']}) kurang dari minimum (RM{$rules['min_gaji_pokok']})";
-            }
-        }
-
-        // Check maximum age
-        if (isset($rules['max_umur']) && isset($data['umur'])) {
-            if ($data['umur'] > $rules['max_umur']) {
-                $eligible = false;
-                $reasons[] = "Umur ({$data['umur']} tahun) melebihi had maksimum ({$rules['max_umur']} tahun)";
-            }
-        }
-
-        // Check minimum age
-        if (isset($rules['min_umur']) && isset($data['umur'])) {
-            if ($data['umur'] < $rules['min_umur']) {
-                $eligible = false;
-                $reasons[] = "Umur ({$data['umur']} tahun) kurang dari minimum ({$rules['min_umur']} tahun)";
-            }
+        } else {
+            $eligible = false;
+            $reasons[] = "❌ Tiada kriteria kelayakan ditetapkan untuk koperasi ini";
         }
 
         return [

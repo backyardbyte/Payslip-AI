@@ -75,6 +75,12 @@ class RolesAndPermissionsSeeder extends Seeder
             ['name' => 'queue.view', 'display_name' => 'View Queue', 'description' => 'View processing queue', 'category' => 'queue'],
             ['name' => 'queue.manage', 'display_name' => 'Manage Queue', 'description' => 'Manage processing queue', 'category' => 'queue'],
             ['name' => 'queue.clear', 'display_name' => 'Clear Queue', 'description' => 'Clear processing queue', 'category' => 'queue'],
+            
+            // Telegram Bot Management
+            ['name' => 'telegram.manage', 'display_name' => 'Manage Telegram Bot', 'description' => 'Start, stop, and configure telegram bot', 'category' => 'telegram'],
+            ['name' => 'telegram.view', 'display_name' => 'View Telegram Bot', 'description' => 'View telegram bot status and information', 'category' => 'telegram'],
+            ['name' => 'telegram.view_logs', 'display_name' => 'View Telegram Logs', 'description' => 'View telegram bot logs', 'category' => 'telegram'],
+            ['name' => 'telegram.configure', 'display_name' => 'Configure Telegram Bot', 'description' => 'Configure telegram bot settings', 'category' => 'telegram'],
         ];
 
         foreach ($permissions as $permission) {
@@ -99,7 +105,8 @@ class RolesAndPermissionsSeeder extends Seeder
                     'user.view', 'user.create', 'user.update', 'user.activate', 'user.assign_roles',
                     'system.view_health', 'system.view_statistics', 'system.clear_cache', 'system.cleanup', 'system.clear_logs',
                     'analytics.view', 'analytics.export', 'report.generate',
-                    'queue.view', 'queue.manage', 'queue.clear'
+                    'queue.view', 'queue.manage', 'queue.clear',
+                    'telegram.manage', 'telegram.view', 'telegram.view_logs', 'telegram.configure'
                 ]
             ],
             [
@@ -112,7 +119,8 @@ class RolesAndPermissionsSeeder extends Seeder
                     'user.view',
                     'system.view_health', 'system.view_statistics',
                     'analytics.view', 'report.generate',
-                    'queue.view'
+                    'queue.view',
+                    'telegram.view'
                 ]
             ],
             [

@@ -1041,40 +1041,52 @@ class PayslipProcessingService
     }
 
     /**
-     * Perform eligibility check
+     * Perform eligibility check based only on peratus gaji bersih
      */
     private function performEligibilityCheck(float $percentage, array $rules, array $extractedData): array
     {
         $eligible = true;
         $reasons = [];
-        $score = 0;
+        $score = 100;
 
-        // Check percentage requirement
-        if (isset($rules['max_peratus_gaji_bersih'])) {
-            if ($percentage <= $rules['max_peratus_gaji_bersih']) {
-                $score += 50;
-                $reasons[] = "✅ Percentage requirement met ({$percentage}% ≤ {$rules['max_peratus_gaji_bersih']}%)";
+        // Check minimum take-home percentage requirement (only criteria)
+        if (isset($rules['min_peratus_gaji_bersih'])) {
+            if ($percentage >= $rules['min_peratus_gaji_bersih']) {
+                $eligible = true;
+                $reasons[] = "✅ ELIGIBLE: Take-home percentage ({$percentage}%) meets minimum requirement ({$rules['min_peratus_gaji_bersih']}%)";
+                
+                // Bonus scoring for higher percentages
+                if ($percentage >= 85) {
+                    $score = 100;
+                    $reasons[] = "🌟 Excellent financial standing ({$percentage}% take-home)";
+                } elseif ($percentage >= 75) {
+                    $score = 90;
+                    $reasons[] = "⭐ Very good financial standing ({$percentage}% take-home)";
+                } elseif ($percentage >= 65) {
+                    $score = 80;
+                    $reasons[] = "👍 Good financial standing ({$percentage}% take-home)";
+                } else {
+                    $score = 70;
+                    $reasons[] = "✓ Acceptable financial standing ({$percentage}% take-home)";
+                }
             } else {
                 $eligible = false;
-                $reasons[] = "❌ Percentage too high ({$percentage}% > {$rules['max_peratus_gaji_bersih']}%)";
+                $score = 0;
+                $reasons[] = "❌ NOT ELIGIBLE: Take-home percentage ({$percentage}%) is below minimum requirement ({$rules['min_peratus_gaji_bersih']}%)";
+                $reasons[] = "💡 You need at least {$rules['min_peratus_gaji_bersih']}% take-home to qualify for this koperasi";
             }
-        }
-
-        // Check minimum basic salary
-        if (isset($rules['min_gaji_pokok']) && $extractedData['gaji_pokok'] !== null) {
-            if ($extractedData['gaji_pokok'] >= $rules['min_gaji_pokok']) {
-                $score += 30;
-                $reasons[] = "✅ Basic salary requirement met";
-            } else {
-                $eligible = false;
-                $reasons[] = "❌ Basic salary too low";
-            }
+        } else {
+            $eligible = false;
+            $score = 0;
+            $reasons[] = "❌ No eligibility criteria defined for this koperasi";
         }
 
         return [
             'eligible' => $eligible,
             'reasons' => $reasons,
-            'score' => $score
+            'score' => $score,
+            'percentage_used' => $percentage,
+            'minimum_required' => $rules['min_peratus_gaji_bersih'] ?? null
         ];
     }
 
@@ -1577,5 +1589,133 @@ class PayslipProcessingService
     {
         // Basic Tesseract implementation
         return "Tesseract OCR text";
+    }
+
+    /**
+     * Process a payslip either synchronously or asynchronously based on settings
+     */
+    public function processPayslipWithMode(Payslip $payslip): array
+    {
+        $processingMode = $this->settingsService->get('advanced.processing_mode', 'async');
+        
+        if ($processingMode === 'sync') {
+            return $this->processPayslipSync($payslip);
+        } else {
+            return $this->processPayslipAsync($payslip);
+        }
+    }
+
+    /**
+     * Process payslip synchronously (immediate processing)
+     */
+    private function processPayslipSync(Payslip $payslip): array
+    {
+        try {
+            // Process immediately
+            $result = $this->processPayslip($payslip);
+            
+            // Send notifications immediately
+            $this->sendNotifications($payslip, $result);
+            
+            return $result;
+        } catch (\Exception $e) {
+            Log::error('Synchronous payslip processing failed', [
+                'payslip_id' => $payslip->id,
+                'error' => $e->getMessage(),
+            ]);
+            
+            throw $e;
+        }
+    }
+
+    /**
+     * Process payslip asynchronously (queue job)
+     */
+    private function processPayslipAsync(Payslip $payslip): array
+    {
+        // Dispatch the job to the queue
+        \App\Jobs\ProcessPayslip::dispatch($payslip);
+        
+        return [
+            'status' => 'queued',
+            'payslip_id' => $payslip->id,
+            'message' => 'Payslip queued for processing'
+        ];
+    }
+
+    /**
+     * Send notifications for processed payslip
+     */
+    private function sendNotifications(Payslip $payslip, array $result): void
+    {
+        try {
+            // Send Telegram notification if applicable
+            if ($payslip->source === 'telegram' && $payslip->telegram_chat_id) {
+                $this->sendTelegramNotification($payslip, $result);
+            }
+            
+            // Send WhatsApp notification if applicable
+            if ($payslip->source === 'whatsapp' && $payslip->whatsapp_phone) {
+                $this->sendWhatsAppNotification($payslip, $result);
+            }
+            
+            Log::info('Notifications sent for payslip', [
+                'payslip_id' => $payslip->id,
+                'telegram_sent' => $payslip->source === 'telegram',
+                'whatsapp_sent' => $payslip->source === 'whatsapp',
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Failed to send notifications for payslip', [
+                'payslip_id' => $payslip->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    /**
+     * Send Telegram notification
+     */
+    private function sendTelegramNotification(Payslip $payslip, array $result): void
+    {
+        if (!$payslip->telegram_chat_id) {
+            return;
+        }
+
+        try {
+            $telegramService = app(\App\Services\SimpleTelegramBotService::class);
+            $detailedResults = $result['detailed_koperasi_results'] ?? [];
+            $telegramService->sendProcessingResult($payslip, $detailedResults);
+            
+            Log::info("Sent Telegram notification for payslip {$payslip->id} to chat {$payslip->telegram_chat_id}");
+        } catch (\Exception $e) {
+            Log::error("Failed to send Telegram notification for payslip {$payslip->id}: " . $e->getMessage());
+        }
+    }
+
+    /**
+     * Send WhatsApp notification
+     */
+    private function sendWhatsAppNotification(Payslip $payslip, array $result): void
+    {
+        if (!$payslip->whatsapp_phone) {
+            return;
+        }
+
+        // Check if WhatsApp bot is configured
+        $accessToken = config('services.whatsapp.access_token');
+        if (!$accessToken) {
+            Log::warning("Skipping WhatsApp notification for payslip {$payslip->id}: Access token not configured");
+            return;
+        }
+
+        try {
+            $whatsappService = app(\App\Services\WhatsAppService::class);
+            $detailedResults = $result['detailed_koperasi_results'] ?? [];
+            $whatsappService->sendProcessingResult($payslip, $detailedResults);
+            
+            Log::info("Sent WhatsApp notification for payslip {$payslip->id} to {$payslip->whatsapp_phone}");
+        } catch (\Exception $e) {
+            Log::error("Failed to send WhatsApp notification for payslip {$payslip->id}: " . $e->getMessage());
+        }
     }
 } 

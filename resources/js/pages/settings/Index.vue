@@ -401,6 +401,30 @@
                         <div v-if="activeTab === 'advanced'" class="space-y-6">
                             <Card>
                                 <CardHeader>
+                                    <CardTitle>Processing Configuration</CardTitle>
+                                    <CardDescription>Configure how payslips are processed</CardDescription>
+                                </CardHeader>
+                                <CardContent class="space-y-4">
+                                    <div>
+                                        <Label for="processingMode">Processing Mode</Label>
+                                        <select 
+                                            id="processingMode"
+                                            v-model="settings.advanced.processingMode" 
+                                            class="w-full mt-1 px-3 py-2 border border-input rounded-md bg-background text-sm"
+                                        >
+                                            <option value="sync">Synchronous (Immediate)</option>
+                                            <option value="async">Asynchronous (Queue)</option>
+                                        </select>
+                                        <p class="text-sm text-muted-foreground mt-1">
+                                            <strong>Sync:</strong> Process payslips immediately (no queue:work needed)<br>
+                                            <strong>Async:</strong> Use queue system (requires queue:work to be running)
+                                        </p>
+                                    </div>
+                                </CardContent>
+                            </Card>
+
+                            <Card>
+                                <CardHeader>
                                     <CardTitle>Performance Tuning</CardTitle>
                                     <CardDescription>Advanced performance and optimization settings</CardDescription>
                                 </CardHeader>
@@ -473,6 +497,76 @@
                                                 v-model:checked="settings.advanced.compressImages"
                                             />
                                             <Label for="compressImages">Compress uploaded images</Label>
+                                        </div>
+                                    </div>
+                                </CardContent>
+                            </Card>
+
+                            <Card>
+                                <CardHeader>
+                                    <CardTitle>Queue Settings</CardTitle>
+                                    <CardDescription>Configure queue worker behavior</CardDescription>
+                                </CardHeader>
+                                <CardContent class="space-y-4">
+                                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        <div>
+                                            <Label for="queueWorkerSleep">Worker Sleep (seconds)</Label>
+                                            <Input 
+                                                id="queueWorkerSleep"
+                                                v-model="settings.advanced.queueWorkerSleep" 
+                                                type="number" 
+                                                min="1" 
+                                                max="60"
+                                                class="mt-1"
+                                            />
+                                            <p class="text-sm text-muted-foreground mt-1">Sleep time between queue checks</p>
+                                        </div>
+                                        <div>
+                                            <Label for="queueWorkerTries">Max Tries</Label>
+                                            <Input 
+                                                id="queueWorkerTries"
+                                                v-model="settings.advanced.queueWorkerTries" 
+                                                type="number" 
+                                                min="1" 
+                                                max="10"
+                                                class="mt-1"
+                                            />
+                                            <p class="text-sm text-muted-foreground mt-1">Maximum retry attempts for failed jobs</p>
+                                        </div>
+                                    </div>
+                                </CardContent>
+                            </Card>
+
+                            <Card>
+                                <CardHeader>
+                                    <CardTitle>Batch Processing</CardTitle>
+                                    <CardDescription>Configure batch processing settings</CardDescription>
+                                </CardHeader>
+                                <CardContent class="space-y-4">
+                                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        <div>
+                                            <Label for="batchProcessingTimeout">Batch Timeout (seconds)</Label>
+                                            <Input 
+                                                id="batchProcessingTimeout"
+                                                v-model="settings.advanced.batchProcessingTimeout" 
+                                                type="number" 
+                                                min="300" 
+                                                max="7200"
+                                                class="mt-1"
+                                            />
+                                            <p class="text-sm text-muted-foreground mt-1">Timeout for batch processing jobs</p>
+                                        </div>
+                                        <div>
+                                            <Label for="batchProcessingBackoff">Batch Backoff (seconds)</Label>
+                                            <Input 
+                                                id="batchProcessingBackoff"
+                                                v-model="settings.advanced.batchProcessingBackoff" 
+                                                type="number" 
+                                                min="10" 
+                                                max="300"
+                                                class="mt-1"
+                                            />
+                                            <p class="text-sm text-muted-foreground mt-1">Base backoff time for retry attempts</p>
                                         </div>
                                     </div>
                                 </CardContent>
@@ -640,12 +734,17 @@ const settings = ref({
         enableWebhooks: false,
     },
     advanced: {
+        processingMode: 'sync',
         cacheDuration: 60,
         queueTimeout: 300,
         memoryLimit: 512,
         enableDebugMode: false,
         enableProfiling: false,
         compressImages: true,
+        queueWorkerSleep: 3,
+        queueWorkerTries: 3,
+        batchProcessingTimeout: 3600,
+        batchProcessingBackoff: 60,
     },
 });
 
@@ -770,12 +869,17 @@ const fetchSettings = async () => {
                 };
                 
                 settings.value.advanced = {
+                    processingMode: getSetting('advanced', 'advanced.processing_mode', 'sync'),
                     cacheDuration: getSetting('advanced', 'advanced.cache_duration', 60),
                     queueTimeout: getSetting('advanced', 'advanced.queue_timeout', 300),
                     memoryLimit: getSetting('advanced', 'advanced.memory_limit', 512),
                     enableDebugMode: getSetting('advanced', 'advanced.enable_debug_mode', false),
                     enableProfiling: getSetting('advanced', 'advanced.enable_profiling', false),
                     compressImages: getSetting('advanced', 'advanced.compress_images', true),
+                    queueWorkerSleep: getSetting('advanced', 'advanced.queue_worker_sleep', 3),
+                    queueWorkerTries: getSetting('advanced', 'advanced.queue_worker_tries', 3),
+                    batchProcessingTimeout: getSetting('advanced', 'advanced.batch_processing_timeout', 3600),
+                    batchProcessingBackoff: getSetting('advanced', 'advanced.batch_processing_backoff', 60),
                 };
                 
                 console.log('Final settings state:', settings.value);
@@ -822,8 +926,13 @@ const saveSettings = async () => {
             'api.enable_cors': settings.value.api.enableCors,
             'api.require_auth': settings.value.api.requireAuth,
             'api.log_requests': settings.value.api.logRequests,
+            'advanced.processing_mode': settings.value.advanced.processingMode,
             'advanced.cache_duration': settings.value.advanced.cacheDuration,
             'advanced.queue_timeout': settings.value.advanced.queueTimeout,
+            'advanced.queue_worker_sleep': settings.value.advanced.queueWorkerSleep,
+            'advanced.queue_worker_tries': settings.value.advanced.queueWorkerTries,
+            'advanced.batch_processing_timeout': settings.value.advanced.batchProcessingTimeout,
+            'advanced.batch_processing_backoff': settings.value.advanced.batchProcessingBackoff,
             'advanced.memory_limit': settings.value.advanced.memoryLimit,
             'advanced.enable_debug_mode': settings.value.advanced.enableDebugMode,
             'advanced.enable_profiling': settings.value.advanced.enableProfiling,

@@ -5,9 +5,10 @@ import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import AuthBase from '@/layouts/AuthLayout.vue';
 import { Head, useForm } from '@inertiajs/vue3';
-import { LoaderCircle, ArrowLeft } from 'lucide-vue-next';
+import { LoaderCircle, ArrowLeft, Info } from 'lucide-vue-next';
 
 defineProps<{
     status?: string;
@@ -41,6 +42,53 @@ const submit = () => {
         <div v-if="status" class="mb-4 text-center text-sm font-medium text-green-600">
             {{ status }}
         </div>
+
+        <!-- Test Credentials Infobox -->
+        <Card class="mb-6 bg-blue-50 border-blue-200 dark:bg-blue-950/50 dark:border-blue-800">
+            <CardHeader class="pb-3">
+                <CardTitle class="text-sm font-medium text-blue-700 dark:text-blue-300 flex items-center gap-2">
+                    <Info class="h-4 w-4" />
+                    Test Credentials
+                </CardTitle>
+                <CardDescription class="text-xs text-blue-600 dark:text-blue-400">
+                    Use these accounts for testing purposes
+                </CardDescription>
+            </CardHeader>
+            <CardContent class="pt-0">
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                    <div class="space-y-1">
+                        <div class="font-medium text-blue-700 dark:text-blue-300">Super Admin</div>
+                        <div class="text-blue-600 dark:text-blue-400">admin@test.com</div>
+                        <div class="text-blue-600 dark:text-blue-400">Password123</div>
+                    </div>
+                    <div class="space-y-1">
+                        <div class="font-medium text-blue-700 dark:text-blue-300">Manager</div>
+                        <div class="text-blue-600 dark:text-blue-400">operations@test.com</div>
+                        <div class="text-blue-600 dark:text-blue-400">Password123</div>
+                    </div>
+                    <div class="space-y-1">
+                        <div class="font-medium text-blue-700 dark:text-blue-300">Admin</div>
+                        <div class="text-blue-600 dark:text-blue-400">manager@test.com</div>
+                        <div class="text-blue-600 dark:text-blue-400">Password123</div>
+                    </div>
+                    <div class="space-y-1">
+                        <div class="font-medium text-blue-700 dark:text-blue-300">Operator</div>
+                        <div class="text-blue-600 dark:text-blue-400">operator@test.com</div>
+                        <div class="text-blue-600 dark:text-blue-400">Password123</div>
+                    </div>
+                    <div class="space-y-1">
+                        <div class="font-medium text-blue-700 dark:text-blue-300">Demo User</div>
+                        <div class="text-blue-600 dark:text-blue-400">demo@test.com</div>
+                        <div class="text-blue-600 dark:text-blue-400">Password123</div>
+                    </div>
+                    <div class="space-y-1">
+                        <div class="font-medium text-blue-700 dark:text-blue-300">Test User</div>
+                        <div class="text-blue-600 dark:text-blue-400">test@example.com</div>
+                        <div class="text-blue-600 dark:text-blue-400">password</div>
+                    </div>
+                </div>
+            </CardContent>
+        </Card>
 
         <form @submit.prevent="submit" class="flex flex-col gap-6">
             <div class="grid gap-6">

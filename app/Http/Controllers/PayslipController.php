@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Jobs\ProcessPayslip;
 use App\Models\Payslip;
 use App\Services\SettingsService;
+use App\Services\PayslipProcessingService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Storage;
@@ -226,10 +227,16 @@ class PayslipController extends Controller
 
             \Log::info('Payslip created', ['id' => $payslip->id]);
 
-            ProcessPayslip::dispatch($payslip);
-            \Log::info('Job dispatched', ['payslip_id' => $payslip->id]);
+            // Process payslip using the new mode-aware service
+            $processingService = app(\App\Services\PayslipProcessingService::class);
+            $result = $processingService->processPayslipWithMode($payslip);
+            \Log::info('Processing initiated', ['payslip_id' => $payslip->id, 'mode' => $result['status'] ?? 'completed']);
 
-            return response()->json(['job_id' => $payslip->id]);
+            return response()->json([
+                'job_id' => $payslip->id,
+                'status' => $result['status'] ?? 'completed',
+                'message' => $result['message'] ?? 'Payslip processed successfully'
+            ]);
 
         } catch (\Illuminate\Validation\ValidationException $e) {
             \Log::error('Validation failed', ['errors' => $e->errors()]);
@@ -497,7 +504,7 @@ class PayslipController extends Controller
             return response()->json(['error' => 'Only failed payslips can be reprocessed'], 422);
         }
 
-        // Reset payslip status and dispatch processing job
+        // Reset payslip status and process using the new mode-aware service
         $payslip->update([
             'status' => 'queued',
             'processing_error' => null,
@@ -505,11 +512,13 @@ class PayslipController extends Controller
             'processing_completed_at' => null,
         ]);
 
-        ProcessPayslip::dispatch($payslip);
+        $processingService = app(PayslipProcessingService::class);
+        $result = $processingService->processPayslipWithMode($payslip);
 
         return response()->json([
-            'message' => 'Payslip queued for reprocessing',
-            'payslip_id' => $payslip->id
+            'message' => $result['message'] ?? 'Payslip processing initiated',
+            'payslip_id' => $payslip->id,
+            'status' => $result['status'] ?? 'completed'
         ]);
     }
 
@@ -555,6 +564,7 @@ class PayslipController extends Controller
                 break;
 
             case 'reprocess':
+                $processingService = app(PayslipProcessingService::class);
                 foreach ($payslips as $payslip) {
                     if ($payslip->status === 'failed') {
                         $payslip->update([
@@ -563,8 +573,8 @@ class PayslipController extends Controller
                             'processing_started_at' => null,
                             'processing_completed_at' => null,
                         ]);
-                        ProcessPayslip::dispatch($payslip);
-                        $results[] = ['id' => $payslip->id, 'status' => 'queued'];
+                        $result = $processingService->processPayslipWithMode($payslip);
+                        $results[] = ['id' => $payslip->id, 'status' => $result['status'] ?? 'completed'];
                     } else {
                         $results[] = ['id' => $payslip->id, 'status' => 'skipped', 'reason' => 'not failed'];
                     }

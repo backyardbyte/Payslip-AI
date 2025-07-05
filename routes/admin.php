@@ -66,4 +66,18 @@ Route::middleware(['auth'])->prefix('admin')->name('admin.')->group(function () 
         })->name('system.index');
     });
     
+    // Telegram Bot Management
+    Route::middleware('permission:telegram.manage')->group(function () {
+        Route::get('telegram', [\App\Http\Controllers\Admin\TelegramBotManagementController::class, 'index'])->name('telegram.index');
+        Route::post('telegram/start', [\App\Http\Controllers\Admin\TelegramBotManagementController::class, 'start'])->name('telegram.start');
+        Route::post('telegram/stop', [\App\Http\Controllers\Admin\TelegramBotManagementController::class, 'stop'])->name('telegram.stop');
+        Route::post('telegram/restart', [\App\Http\Controllers\Admin\TelegramBotManagementController::class, 'restart'])->name('telegram.restart');
+        Route::get('telegram/status', [\App\Http\Controllers\Admin\TelegramBotManagementController::class, 'status'])->name('telegram.status');
+        Route::get('telegram/logs', [\App\Http\Controllers\Admin\TelegramBotManagementController::class, 'logs'])->name('telegram.logs');
+        Route::delete('telegram/logs', [\App\Http\Controllers\Admin\TelegramBotManagementController::class, 'clearLogs'])->name('telegram.logs.clear');
+        Route::post('telegram/test', [\App\Http\Controllers\Admin\TelegramBotManagementController::class, 'testConnection'])->name('telegram.test');
+        Route::put('telegram/config', [\App\Http\Controllers\Admin\TelegramBotManagementController::class, 'updateConfiguration'])->name('telegram.config');
+        Route::post('telegram/reset-cache', [\App\Http\Controllers\Admin\TelegramBotManagementController::class, 'resetCache'])->name('telegram.reset-cache');
+    });
+    
 }); 

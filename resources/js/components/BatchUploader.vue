@@ -1,55 +1,56 @@
 <template>
     <Card class="overflow-hidden border-2 border-dashed border-primary/20 hover:border-primary/40 transition-all duration-300">
-        <CardHeader class="bg-gradient-to-r from-blue-50 to-purple-50 dark:from-blue-950/50 dark:to-purple-950/50">
+        <CardHeader class="bg-gradient-to-r from-blue-50 to-purple-50 dark:from-blue-950/50 dark:to-purple-950/50 pb-3">
             <div class="flex items-center justify-between">
-                <div class="flex items-center space-x-3">
-                    <div class="p-3 bg-primary/10 rounded-full">
-                        <Package class="h-6 w-6 text-primary" />
+                <div class="flex items-center space-x-2">
+                    <div class="p-2 bg-primary/10 rounded-full">
+                        <Package class="h-4 w-4 text-primary" />
                     </div>
                     <div>
-                        <CardTitle class="text-xl">Enhanced Batch Upload</CardTitle>
-                        <CardDescription class="text-base">
+                        <CardTitle class="text-base">Enhanced Batch Upload</CardTitle>
+                        <CardDescription class="text-xs">
                             Upload multiple payslips simultaneously for efficient AI processing
                         </CardDescription>
                     </div>
                 </div>
                 <div class="text-right">
-                    <div class="text-2xl font-bold text-primary">{{ files.length }}</div>
-                    <div class="text-sm text-muted-foreground">files selected</div>
+                    <div class="text-lg font-bold text-primary">{{ files.length }}</div>
+                    <div class="text-xs text-muted-foreground">files selected</div>
                 </div>
             </div>
         </CardHeader>
-        <CardContent class="space-y-6">
+        <CardContent class="space-y-4">
             <!-- Batch Settings -->
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 p-4 bg-muted/30 rounded-lg">
-                <div class="space-y-2">
-                    <Label class="text-sm font-medium">Batch Name</Label>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-3 p-3 bg-muted/30 rounded-lg">
+                <div class="space-y-1">
+                    <Label class="text-xs font-medium">Batch Name</Label>
                     <Input 
                         v-model="batchSettings.name" 
                         placeholder="Enter batch name"
-                        class="text-sm"
+                        class="text-xs h-7"
                     />
                 </div>
-                <div class="space-y-2">
-                    <Label class="text-sm font-medium">Processing Priority</Label>
+                <div class="space-y-1">
+                    <Label class="text-xs font-medium">Processing Priority</Label>
                     <select
                         v-model="batchSettings.priority"
-                        class="w-full px-3 py-2 border border-input rounded-md bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                        class="w-full px-2 py-1 border border-input rounded-md bg-background text-xs focus:outline-none focus:ring-2 focus:ring-ring h-7"
                     >
                         <option value="low">🔵 Low Priority</option>
                         <option value="normal">🟢 Normal Priority</option>
                         <option value="high">🟠 High Priority</option>
                     </select>
                 </div>
-                <div class="space-y-2">
-                    <Label class="text-sm font-medium">Auto-process</Label>
+                <div class="space-y-1">
+                    <Label class="text-xs font-medium">Auto-process</Label>
                     <div class="flex items-center space-x-2">
                         <Checkbox 
                             id="auto-process"
                             :checked="batchSettings.parallelProcessing"
                             @update:checked="batchSettings.parallelProcessing = $event"
+                            class="h-3 w-3"
                         />
-                        <Label for="auto-process" class="text-sm">Start processing immediately</Label>
+                        <Label for="auto-process" class="text-xs">Start processing immediately</Label>
                     </div>
                 </div>
             </div>
@@ -60,7 +61,7 @@
                 @dragleave.prevent="onDragLeave"
                 @drop.prevent="onDrop"
                 :class="[
-                    'flex flex-col items-center justify-center p-12 border-2 border-dashed rounded-lg cursor-pointer transition-colors',
+                    'flex flex-col items-center justify-center p-8 border-2 border-dashed rounded-lg cursor-pointer transition-colors',
                     isDragging ? 'border-primary bg-primary/10' : 'border-border',
                     isUploading ? 'pointer-events-none opacity-50' : ''
                 ]"
@@ -74,41 +75,41 @@
                     class="hidden"
                     accept=".pdf,.png,.jpg,.jpeg"
                 />
-                <Package class="w-12 h-12 text-muted-foreground" />
-                <p class="mt-4 text-muted-foreground">Click or drag multiple files here for batch upload</p>
-                <p class="mt-2 text-xs text-muted-foreground">
+                <Package class="w-8 h-8 text-muted-foreground" />
+                <p class="mt-3 text-sm text-muted-foreground">Click or drag multiple files here for batch upload</p>
+                <p class="mt-1 text-xs text-muted-foreground">
                     Supports PDF, PNG, JPG, JPEG (2-50 files, max 5MB each)
                 </p>
             </div>
 
             <!-- File List -->
-            <div v-if="files.length > 0" class="space-y-4">
+            <div v-if="files.length > 0" class="space-y-3">
                 <div class="flex items-center justify-between">
-                    <h3 class="text-lg font-semibold">Files to Upload ({{ files.length }})</h3>
+                    <h3 class="text-sm font-semibold">Files to Upload ({{ files.length }})</h3>
                     <div class="flex gap-2">
-                        <Button variant="outline" size="sm" @click="clearFiles" :disabled="isUploading">
-                            <Trash2 class="w-4 h-4 mr-2" />
+                        <Button variant="outline" size="sm" @click="clearFiles" :disabled="isUploading" class="h-7 text-xs">
+                            <Trash2 class="w-3 h-3 mr-1.5" />
                             Clear All
                         </Button>
-                        <Button variant="outline" size="sm" @click="removeFailedFiles" :disabled="isUploading">
-                            <XCircle class="w-4 h-4 mr-2" />
+                        <Button variant="outline" size="sm" @click="removeFailedFiles" :disabled="isUploading" class="h-7 text-xs">
+                            <XCircle class="w-3 h-3 mr-1.5" />
                             Remove Failed
                         </Button>
-                        <Button variant="outline" size="sm" @click="resetFiles" :disabled="isUploading">
-                            <RotateCcw class="w-4 h-4 mr-2" />
+                        <Button variant="outline" size="sm" @click="resetFiles" :disabled="isUploading" class="h-7 text-xs">
+                            <RotateCcw class="w-3 h-3 mr-1.5" />
                             Reset Files
                         </Button>
                     </div>
                 </div>
 
                 <!-- File Grid -->
-                <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4 max-h-96 overflow-y-auto">
+                <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3 max-h-80 overflow-y-auto">
                     <div
                         v-for="file in files"
                         :key="file.id"
                         class="relative group border rounded-lg overflow-hidden text-sm"
                     >
-                        <div class="relative w-full h-24">
+                        <div class="relative w-full h-20">
                             <img
                                 v-if="file.previewUrl"
                                 :src="file.previewUrl"
@@ -116,7 +117,7 @@
                                 alt="File preview"
                             />
                             <div v-else class="w-full h-full flex items-center justify-center bg-muted">
-                                <FileText class="w-8 h-8 text-muted-foreground" />
+                                <FileText class="w-6 h-6 text-muted-foreground" />
                             </div>
 
                             <!-- Upload Progress -->
@@ -124,7 +125,7 @@
                                 v-if="file.status === 'uploading'"
                                 class="absolute inset-0 bg-black/70 flex flex-col items-center justify-center gap-1 text-white"
                             >
-                                <LoaderCircle class="w-5 h-5 animate-spin" />
+                                <LoaderCircle class="w-4 h-4 animate-spin" />
                                 <span class="text-xs font-medium">{{ file.progress.toFixed(0) }}%</span>
                             </div>
 
@@ -133,7 +134,7 @@
                                 v-if="file.status === 'error'"
                                 class="absolute inset-0 bg-red-900/80 flex flex-col items-center justify-center gap-1 text-white p-1 text-center"
                             >
-                                <XCircle class="w-5 h-5" />
+                                <XCircle class="w-4 h-4" />
                                 <span class="text-xs font-semibold">Failed</span>
                             </div>
 
@@ -142,7 +143,7 @@
                                 v-if="file.status === 'success'"
                                 class="absolute inset-0 bg-green-900/80 flex flex-col items-center justify-center gap-1 text-white"
                             >
-                                <CheckCircle class="w-5 h-5" />
+                                <CheckCircle class="w-4 h-4" />
                                 <span class="text-xs font-semibold">Uploaded</span>
                             </div>
 
@@ -151,7 +152,7 @@
                                 <Button
                                     variant="destructive"
                                     size="icon"
-                                    class="h-6 w-6"
+                                    class="h-5 w-5"
                                     @click.stop="removeFile(file.id)"
                                     :disabled="isUploading"
                                 >
@@ -160,7 +161,7 @@
                             </div>
                         </div>
 
-                        <div class="p-2 border-t bg-card">
+                        <div class="p-1.5 border-t bg-card">
                             <p class="font-medium truncate text-xs" :title="file.file.name">
                                 {{ file.file.name }}
                             </p>
@@ -175,14 +176,14 @@
                 </div>
 
                 <!-- Upload Summary -->
-                <div class="flex items-center justify-between p-4 bg-muted rounded-lg">
-                    <div class="text-sm">
+                <div class="flex items-center justify-between p-3 bg-muted rounded-lg">
+                    <div class="text-xs">
                         <span class="font-medium">{{ getPendingFiles().length }}</span> files ready to upload
                         <span v-if="getFailedFiles().length > 0" class="text-red-500 ml-2">
                             ({{ getFailedFiles().length }} failed)
                         </span>
                     </div>
-                    <div class="text-sm text-muted-foreground">
+                    <div class="text-xs text-muted-foreground">
                         Total size: {{ getTotalSize() }}
                     </div>
                 </div>
@@ -190,12 +191,12 @@
                 <!-- Upload Button -->
                 <Button
                     @click="uploadBatch"
-                    class="w-full"
+                    class="w-full h-7 text-xs"
                     :disabled="isUploading || getPendingFiles().length < 2"
                     size="lg"
                 >
-                    <LoaderCircle v-if="isUploading" class="w-4 h-4 mr-2 animate-spin" />
-                    <Package v-else class="w-4 h-4 mr-2" />
+                    <LoaderCircle v-if="isUploading" class="w-3 h-3 mr-1.5 animate-spin" />
+                    <Package v-else class="w-3 h-3 mr-1.5" />
                     {{ isUploading ? 'Uploading Batch...' : `Upload Batch (${getPendingFiles().length} files)` }}
                 </Button>
             </div>

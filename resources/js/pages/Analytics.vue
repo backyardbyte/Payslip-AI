@@ -11,77 +11,69 @@
                         <p class="text-muted-foreground">Comprehensive insights into payslip processing and eligibility</p>
                     </div>
                     <div class="flex gap-2">
-                        <select v-model="dateRange" class="px-3 py-2 border border-input rounded-md bg-background text-sm">
+                        <select v-model="dateRange" class="px-2.5 py-1.5 border border-input rounded-md bg-background text-xs">
                             <option value="7">Last 7 days</option>
                             <option value="30">Last 30 days</option>
                             <option value="90">Last 90 days</option>
                             <option value="365">Last year</option>
                         </select>
-                        <Button variant="outline" size="sm" @click="refreshData" :disabled="isLoading">
-                            <RefreshCw :class="['h-4 w-4 mr-2', isLoading && 'animate-spin']" />
+                        <Button variant="outline" size="sm" @click="refreshData" :disabled="isLoading" class="h-7 text-xs">
+                            <RefreshCw :class="['h-3 w-3 mr-1.5', isLoading && 'animate-spin']" />
                             Refresh
                         </Button>
                     </div>
                 </div>
 
                 <!-- Key Metrics -->
-                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                    <Card>
-                        <CardContent>
-                            <div class="flex items-center space-x-2">
-                                <div class="p-2 bg-blue-100 rounded-lg dark:bg-blue-900/50">
-                                    <FileText class="h-5 w-5 text-blue-600 dark:text-blue-400" />
-                                </div>
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+                    <Card class="bg-gradient-to-r from-blue-500 to-blue-600 text-white">
+                        <CardContent class="p-3">
+                            <div class="flex items-center justify-between">
                                 <div>
-                                    <p class="text-sm text-muted-foreground">Total Processed</p>
-                                    <p class="text-2xl font-bold">{{ analytics.totalProcessed }}</p>
-                                    <p class="text-xs text-green-600">+{{ analytics.recentGrowth }}% vs last period</p>
+                                    <p class="text-blue-100 text-xs">Total Processed</p>
+                                    <p class="text-xl font-bold">{{ analytics.totalProcessed }}</p>
+                                    <p class="text-xs text-blue-200">+{{ analytics.recentGrowth }}% vs last period</p>
                                 </div>
+                                <FileText class="h-6 w-6 text-blue-200" />
                             </div>
                         </CardContent>
                     </Card>
                     
-                    <Card>
-                        <CardContent>
-                            <div class="flex items-center space-x-2">
-                                <div class="p-2 bg-green-100 rounded-lg dark:bg-green-900/50">
-                                    <CheckCircle class="h-5 w-5 text-green-600 dark:text-green-400" />
-                                </div>
+                    <Card class="bg-gradient-to-r from-green-500 to-green-600 text-white">
+                        <CardContent class="p-3">
+                            <div class="flex items-center justify-between">
                                 <div>
-                                    <p class="text-sm text-muted-foreground">Success Rate</p>
-                                    <p class="text-2xl font-bold">{{ analytics.successRate }}%</p>
-                                    <p class="text-xs text-green-600">{{ analytics.successRate >= 95 ? 'Excellent' : analytics.successRate >= 85 ? 'Good' : 'Needs improvement' }}</p>
+                                    <p class="text-green-100 text-xs">Success Rate</p>
+                                    <p class="text-xl font-bold">{{ analytics.successRate }}%</p>
+                                    <p class="text-xs text-green-200">{{ analytics.successRate >= 95 ? 'Excellent' : analytics.successRate >= 85 ? 'Good' : 'Needs improvement' }}</p>
                                 </div>
+                                <CheckCircle class="h-6 w-6 text-green-200" />
                             </div>
                         </CardContent>
                     </Card>
                     
-                    <Card>
-                        <CardContent>
-                            <div class="flex items-center space-x-2">
-                                <div class="p-2 bg-purple-100 rounded-lg dark:bg-purple-900/50">
-                                    <Users class="h-5 w-5 text-purple-600 dark:text-purple-400" />
-                                </div>
+                    <Card class="bg-gradient-to-r from-purple-500 to-purple-600 text-white">
+                        <CardContent class="p-3">
+                            <div class="flex items-center justify-between">
                                 <div>
-                                    <p class="text-sm text-muted-foreground">Eligible Count</p>
-                                    <p class="text-2xl font-bold">{{ analytics.eligibleCount }}</p>
-                                    <p class="text-xs text-muted-foreground">{{ Math.round((analytics.eligibleCount / analytics.totalProcessed) * 100) }}% eligibility rate</p>
+                                    <p class="text-purple-100 text-xs">Eligible Count</p>
+                                    <p class="text-xl font-bold">{{ analytics.eligibleCount }}</p>
+                                    <p class="text-xs text-purple-200">{{ Math.round((analytics.eligibleCount / analytics.totalProcessed) * 100) }}% eligibility rate</p>
                                 </div>
+                                <Users class="h-6 w-6 text-purple-200" />
                             </div>
                         </CardContent>
                     </Card>
                     
-                    <Card>
-                        <CardContent>
-                            <div class="flex items-center space-x-2">
-                                <div class="p-2 bg-orange-100 rounded-lg dark:bg-orange-900/50">
-                                    <TrendingUp class="h-5 w-5 text-orange-600 dark:text-orange-400" />
-                                </div>
+                    <Card class="bg-gradient-to-r from-orange-500 to-orange-600 text-white">
+                        <CardContent class="p-3">
+                            <div class="flex items-center justify-between">
                                 <div>
-                                    <p class="text-sm text-muted-foreground">Avg. Percentage</p>
-                                    <p class="text-2xl font-bold">{{ analytics.avgPercentage }}%</p>
-                                    <p class="text-xs text-muted-foreground">Average gaji bersih percentage</p>
+                                    <p class="text-orange-100 text-xs">Avg. Percentage</p>
+                                    <p class="text-xl font-bold">{{ analytics.avgPercentage }}%</p>
+                                    <p class="text-xs text-orange-200">Average gaji bersih percentage</p>
                                 </div>
+                                <TrendingUp class="h-6 w-6 text-orange-200" />
                             </div>
                         </CardContent>
                     </Card>
@@ -91,16 +83,16 @@
                 <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
                     <!-- Processing Trends -->
                     <Card>
-                        <CardHeader>
-                            <CardTitle>Processing Trends</CardTitle>
-                            <CardDescription>Daily processing volume over time</CardDescription>
+                        <CardHeader class="pb-3">
+                            <CardTitle class="text-base">Processing Trends</CardTitle>
+                            <CardDescription class="text-xs">Daily processing volume over time</CardDescription>
                         </CardHeader>
                         <CardContent>
                             <div class="h-64 flex items-center justify-center border border-dashed border-muted-foreground rounded-lg">
                                 <div class="text-center text-muted-foreground">
                                     <BarChart3 class="h-12 w-12 mx-auto mb-2" />
-                                    <p>Processing trends chart</p>
-                                    <p class="text-sm">Chart visualization would be here</p>
+                                    <p class="text-sm">Processing trends chart</p>
+                                    <p class="text-xs">Chart visualization would be here</p>
                                 </div>
                             </div>
                         </CardContent>
@@ -108,9 +100,9 @@
 
                     <!-- Success Rate Breakdown -->
                     <Card>
-                        <CardHeader>
-                            <CardTitle>Success Rate by Koperasi</CardTitle>
-                            <CardDescription>Eligibility success rates by institution</CardDescription>
+                        <CardHeader class="pb-3">
+                            <CardTitle class="text-base">Success Rate by Koperasi</CardTitle>
+                            <CardDescription class="text-xs">Eligibility success rates by institution</CardDescription>
                         </CardHeader>
                         <CardContent>
                             <div class="space-y-3">
@@ -144,27 +136,27 @@
                 <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
                     <!-- Processing Status -->
                     <Card>
-                        <CardHeader>
-                            <CardTitle>Processing Status</CardTitle>
-                            <CardDescription>Current queue and processing status</CardDescription>
+                        <CardHeader class="pb-3">
+                            <CardTitle class="text-base">Processing Status</CardTitle>
+                            <CardDescription class="text-xs">Current queue and processing status</CardDescription>
                         </CardHeader>
                         <CardContent>
-                            <div class="space-y-3">
+                            <div class="space-y-2">
                                 <div class="flex justify-between items-center">
-                                    <span class="text-sm">Completed</span>
-                                    <span class="text-sm font-bold text-green-600">{{ analytics.statusBreakdown.completed }}</span>
+                                    <span class="text-xs">Completed</span>
+                                    <span class="text-xs font-bold text-green-600">{{ analytics.statusBreakdown.completed }}</span>
                                 </div>
                                 <div class="flex justify-between items-center">
-                                    <span class="text-sm">Processing</span>
-                                    <span class="text-sm font-bold text-blue-600">{{ analytics.statusBreakdown.processing }}</span>
+                                    <span class="text-xs">Processing</span>
+                                    <span class="text-xs font-bold text-blue-600">{{ analytics.statusBreakdown.processing }}</span>
                                 </div>
                                 <div class="flex justify-between items-center">
-                                    <span class="text-sm">Queued</span>
-                                    <span class="text-sm font-bold text-yellow-600">{{ analytics.statusBreakdown.queued }}</span>
+                                    <span class="text-xs">Queued</span>
+                                    <span class="text-xs font-bold text-yellow-600">{{ analytics.statusBreakdown.queued }}</span>
                                 </div>
                                 <div class="flex justify-between items-center">
-                                    <span class="text-sm">Failed</span>
-                                    <span class="text-sm font-bold text-red-600">{{ analytics.statusBreakdown.failed }}</span>
+                                    <span class="text-xs">Failed</span>
+                                    <span class="text-xs font-bold text-red-600">{{ analytics.statusBreakdown.failed }}</span>
                                 </div>
                             </div>
                         </CardContent>
@@ -172,27 +164,27 @@
 
                     <!-- Salary Distribution -->
                     <Card>
-                        <CardHeader>
-                            <CardTitle>Salary Distribution</CardTitle>
-                            <CardDescription>Average salary insights</CardDescription>
+                        <CardHeader class="pb-3">
+                            <CardTitle class="text-base">Salary Distribution</CardTitle>
+                            <CardDescription class="text-xs">Average salary insights</CardDescription>
                         </CardHeader>
                         <CardContent>
-                            <div class="space-y-3">
+                            <div class="space-y-2">
                                 <div class="flex justify-between items-center">
-                                    <span class="text-sm">Average Gaji Bersih</span>
-                                    <span class="text-sm font-bold">RM {{ analytics.salaryStats.avgGajiBersih.toLocaleString() }}</span>
+                                    <span class="text-xs">Average Gaji Bersih</span>
+                                    <span class="text-xs font-bold">RM {{ analytics.salaryStats.avgGajiBersih.toLocaleString() }}</span>
                                 </div>
                                 <div class="flex justify-between items-center">
-                                    <span class="text-sm">Highest</span>
-                                    <span class="text-sm font-bold text-green-600">RM {{ analytics.salaryStats.highest.toLocaleString() }}</span>
+                                    <span class="text-xs">Highest</span>
+                                    <span class="text-xs font-bold text-green-600">RM {{ analytics.salaryStats.highest.toLocaleString() }}</span>
                                 </div>
                                 <div class="flex justify-between items-center">
-                                    <span class="text-sm">Lowest</span>
-                                    <span class="text-sm font-bold text-red-600">RM {{ analytics.salaryStats.lowest.toLocaleString() }}</span>
+                                    <span class="text-xs">Lowest</span>
+                                    <span class="text-xs font-bold text-red-600">RM {{ analytics.salaryStats.lowest.toLocaleString() }}</span>
                                 </div>
                                 <div class="flex justify-between items-center">
-                                    <span class="text-sm">Median</span>
-                                    <span class="text-sm font-bold">RM {{ analytics.salaryStats.median.toLocaleString() }}</span>
+                                    <span class="text-xs">Median</span>
+                                    <span class="text-xs font-bold">RM {{ analytics.salaryStats.median.toLocaleString() }}</span>
                                 </div>
                             </div>
                         </CardContent>

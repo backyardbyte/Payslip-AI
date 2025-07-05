@@ -472,6 +472,17 @@ class SettingsSeeder extends Seeder
                 'validation_rules' => ['required', 'integer', 'min:10', 'max:300'],
                 'sort_order' => 13,
             ],
+            [
+                'key' => 'advanced.processing_mode',
+                'display_name' => 'Processing Mode',
+                'description' => 'Choose between synchronous (immediate) or asynchronous (queue) processing',
+                'category' => 'advanced',
+                'type' => 'select',
+                'default_value' => 'sync',
+                'options' => ['sync' => 'Synchronous (Immediate)', 'async' => 'Asynchronous (Queue)'],
+                'validation_rules' => ['required', 'in:sync,async'],
+                'sort_order' => 14,
+            ],
 
             // Enhanced Telegram Settings
             [
@@ -482,7 +493,7 @@ class SettingsSeeder extends Seeder
                 'type' => 'string',
                 'default_value' => '',
                 'validation_rules' => ['nullable', 'string'],
-                'sort_order' => 14,
+                'sort_order' => 15,
             ],
             [
                 'key' => 'advanced.telegram_webhook_rate_limit',
@@ -492,7 +503,7 @@ class SettingsSeeder extends Seeder
                 'type' => 'boolean',
                 'default_value' => '1',
                 'validation_rules' => ['required', 'boolean'],
-                'sort_order' => 15,
+                'sort_order' => 16,
             ],
             [
                 'key' => 'advanced.telegram_webhook_rate_limit_max',
@@ -502,7 +513,7 @@ class SettingsSeeder extends Seeder
                 'type' => 'integer',
                 'default_value' => '100',
                 'validation_rules' => ['required', 'integer', 'min:10', 'max:1000'],
-                'sort_order' => 16,
+                'sort_order' => 17,
             ],
             [
                 'key' => 'advanced.telegram_webhook_rate_limit_window',
@@ -512,7 +523,7 @@ class SettingsSeeder extends Seeder
                 'type' => 'integer',
                 'default_value' => '60',
                 'validation_rules' => ['required', 'integer', 'min:30', 'max:3600'],
-                'sort_order' => 17,
+                'sort_order' => 18,
             ],
             [
                 'key' => 'advanced.telegram_debug_webhook',
@@ -522,7 +533,7 @@ class SettingsSeeder extends Seeder
                 'type' => 'boolean',
                 'default_value' => '0',
                 'validation_rules' => ['required', 'boolean'],
-                'sort_order' => 18,
+                'sort_order' => 19,
             ],
             [
                 'key' => 'advanced.telegram_polling_timeout',
@@ -532,7 +543,7 @@ class SettingsSeeder extends Seeder
                 'type' => 'integer',
                 'default_value' => '1',
                 'validation_rules' => ['required', 'integer', 'min:1', 'max:60'],
-                'sort_order' => 19,
+                'sort_order' => 20,
             ],
             [
                 'key' => 'advanced.telegram_polling_interval',
@@ -542,7 +553,7 @@ class SettingsSeeder extends Seeder
                 'type' => 'integer',
                 'default_value' => '100000',
                 'validation_rules' => ['required', 'integer', 'min:50000', 'max:1000000'],
-                'sort_order' => 20,
+                'sort_order' => 21,
             ],
             [
                 'key' => 'advanced.telegram_update_limit',
@@ -552,7 +563,7 @@ class SettingsSeeder extends Seeder
                 'type' => 'integer',
                 'default_value' => '100',
                 'validation_rules' => ['required', 'integer', 'min:1', 'max:100'],
-                'sort_order' => 21,
+                'sort_order' => 22,
             ],
             [
                 'key' => 'advanced.telegram_max_consecutive_errors',
@@ -562,7 +573,7 @@ class SettingsSeeder extends Seeder
                 'type' => 'integer',
                 'default_value' => '5',
                 'validation_rules' => ['required', 'integer', 'min:3', 'max:20'],
-                'sort_order' => 22,
+                'sort_order' => 23,
             ],
             [
                 'key' => 'advanced.telegram_rate_limit',
@@ -572,7 +583,7 @@ class SettingsSeeder extends Seeder
                 'type' => 'integer',
                 'default_value' => '10',
                 'validation_rules' => ['required', 'integer', 'min:5', 'max:100'],
-                'sort_order' => 23,
+                'sort_order' => 24,
             ],
             [
                 'key' => 'advanced.telegram_rate_window',
@@ -582,7 +593,7 @@ class SettingsSeeder extends Seeder
                 'type' => 'integer',
                 'default_value' => '60',
                 'validation_rules' => ['required', 'integer', 'min:30', 'max:300'],
-                'sort_order' => 24,
+                'sort_order' => 25,
             ],
 
             // Security Settings

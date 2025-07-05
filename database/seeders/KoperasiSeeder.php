@@ -21,10 +21,7 @@ class KoperasiSeeder extends Seeder
         Koperasi::create([
             'name' => 'Koperasi Sejahtera Berhad',
             'rules' => [
-                'max_peratus_gaji_bersih' => 25, // Very strict - only eligible if percentage <= 25%
-                'min_gaji_pokok' => 2500,
-                'max_umur' => 55,
-                'min_tenure_months' => 12,
+                'min_peratus_gaji_bersih' => 70, // Need at least 70% take-home
             ],
             'is_active' => true,
             'created_at' => now()->subMonths(6),
@@ -34,10 +31,7 @@ class KoperasiSeeder extends Seeder
         Koperasi::create([
             'name' => 'Koperasi Maju Jaya',
             'rules' => [
-                'max_peratus_gaji_bersih' => 50, // Moderate - eligible if percentage <= 50%
-                'min_gaji_pokok' => 2000,
-                'max_loan_amount' => 150000,
-                'blacklist_check' => false,
+                'min_peratus_gaji_bersih' => 60, // Need at least 60% take-home
             ],
             'is_active' => true,
             'created_at' => now()->subMonths(4),
@@ -47,10 +41,7 @@ class KoperasiSeeder extends Seeder
         Koperasi::create([
             'name' => 'Koperasi Harapan Bangsa',
             'rules' => [
-                'max_peratus_gaji_bersih' => 30, // Strict - eligible if percentage <= 30%
-                'min_gaji_pokok' => 3000,
-                'max_umur' => 58,
-                'min_working_years' => 2,
+                'min_peratus_gaji_bersih' => 65, // Need at least 65% take-home
             ],
             'is_active' => false,
             'created_at' => now()->subMonths(8),
@@ -60,10 +51,7 @@ class KoperasiSeeder extends Seeder
         Koperasi::create([
             'name' => 'Koperasi Cergas Malaysia',
             'rules' => [
-                'max_peratus_gaji_bersih' => 70, // Lenient - eligible if percentage <= 70%
-                'min_gaji_pokok' => 2800,
-                'max_debt_service_ratio' => 60,
-                'require_guarantor' => true,
+                'min_peratus_gaji_bersih' => 50, // Need at least 50% take-home
             ],
             'is_active' => true,
             'created_at' => now()->subMonths(3),
@@ -73,11 +61,7 @@ class KoperasiSeeder extends Seeder
         Koperasi::create([
             'name' => 'Koperasi Pekerja Kerajaan',
             'rules' => [
-                'max_peratus_gaji_bersih' => 40, // Moderate-strict - eligible if percentage <= 40%
-                'min_gaji_pokok' => 1800,
-                'max_umur' => 60,
-                'employment_type' => 'government',
-                'max_loan_multiplier' => 12,
+                'min_peratus_gaji_bersih' => 75, // Need at least 75% take-home - Conservative for government workers
             ],
             'is_active' => true,
             'created_at' => now()->subMonths(2),
@@ -87,14 +71,154 @@ class KoperasiSeeder extends Seeder
         Koperasi::create([
             'name' => 'Koperasi Kredit Bersama',
             'rules' => [
-                'max_peratus_gaji_bersih' => 15, // Very strict - eligible if percentage <= 15%
-                'min_gaji_pokok' => 3500,
-                'max_umur' => 50,
-                'credit_score_min' => 650,
+                'min_peratus_gaji_bersih' => 30, // Need at least 80% take-home - Very conservative
             ],
             'is_active' => false,
             'created_at' => now()->subYear(),
             'updated_at' => now()->subMonths(2),
+        ]);
+
+        // Add more realistic Malaysian koperasi examples
+        Koperasi::create([
+            'name' => 'Koperasi Guru Malaysia',
+            'rules' => [
+                'min_peratus_gaji_bersih' => 10, // Teachers typically have stable income
+            ],
+            'is_active' => true,
+            'created_at' => now()->subMonths(5),
+            'updated_at' => now()->subDays(10),
+        ]);
+
+        Koperasi::create([
+            'name' => 'Koperasi Polis Malaysia',
+            'rules' => [
+                'min_peratus_gaji_bersih' => 45, // Police officers have good job security
+            ],
+            'is_active' => true,
+            'created_at' => now()->subMonths(7),
+            'updated_at' => now()->subDays(3),
+        ]);
+
+        Koperasi::create([
+            'name' => 'Koperasi Tenaga Nasional',
+            'rules' => [
+                'min_peratus_gaji_bersih' => 40, // Utilities workers
+            ],
+            'is_active' => true,
+            'created_at' => now()->subMonths(3),
+            'updated_at' => now()->subDays(7),
+        ]);
+
+        Koperasi::create([
+            'name' => 'Koperasi Bank Islam Malaysia',
+            'rules' => [
+                'min_peratus_gaji_bersih' => 55, // Banking sector - conservative
+            ],
+            'is_active' => true,
+            'created_at' => now()->subMonths(4),
+            'updated_at' => now()->subDays(1),
+        ]);
+
+        Koperasi::create([
+            'name' => 'Koperasi Kesihatan Malaysia',
+            'rules' => [
+                'min_peratus_gaji_bersih' => 68, // Healthcare workers
+            ],
+            'is_active' => true,
+            'created_at' => now()->subMonths(6),
+            'updated_at' => now()->subDays(5),
+        ]);
+
+        Koperasi::create([
+            'name' => 'Koperasi Petronas Berhad',
+            'rules' => [
+                'min_peratus_gaji_bersih' => 55, // Oil & gas sector - higher income
+            ],
+            'is_active' => true,
+            'created_at' => now()->subMonths(8),
+            'updated_at' => now()->subDays(2),
+        ]);
+
+        Koperasi::create([
+            'name' => 'Koperasi Universiti Malaysia',
+            'rules' => [
+                'min_peratus_gaji_bersih' => 72, // University staff
+            ],
+            'is_active' => true,
+            'created_at' => now()->subMonths(2),
+            'updated_at' => now()->subDays(8),
+        ]);
+
+        Koperasi::create([
+            'name' => 'Koperasi Pos Malaysia',
+            'rules' => [
+                'min_peratus_gaji_bersih' => 62, // Postal service workers
+            ],
+            'is_active' => true,
+            'created_at' => now()->subMonths(9),
+            'updated_at' => now()->subDays(4),
+        ]);
+
+        Koperasi::create([
+            'name' => 'Koperasi Telekom Malaysia',
+            'rules' => [
+                'min_peratus_gaji_bersih' => 58, // Telecommunications sector
+            ],
+            'is_active' => true,
+            'created_at' => now()->subMonths(5),
+            'updated_at' => now()->subDays(6),
+        ]);
+
+        Koperasi::create([
+            'name' => 'Koperasi Angkatan Tentera Malaysia',
+            'rules' => [
+                'min_peratus_gaji_bersih' => 70, // Military personnel
+            ],
+            'is_active' => true,
+            'created_at' => now()->subMonths(10),
+            'updated_at' => now()->subDays(12),
+        ]);
+
+        // Inactive koperasi for testing
+        Koperasi::create([
+            'name' => 'Koperasi Pembangunan Lama',
+            'rules' => [
+                'min_peratus_gaji_bersih' => 85, // Very strict requirements
+            ],
+            'is_active' => false,
+            'created_at' => now()->subYears(2),
+            'updated_at' => now()->subMonths(6),
+        ]);
+
+        // Add some with different percentage requirements for variety
+        Koperasi::create([
+            'name' => 'Koperasi Rakyat Malaysia',
+            'rules' => [
+                'min_peratus_gaji_bersih' => 45, // Most lenient - for lower income groups
+            ],
+            'is_active' => true,
+            'created_at' => now()->subMonths(11),
+            'updated_at' => now()->subDays(9),
+        ]);
+
+        Koperasi::create([
+            'name' => 'Koperasi Swasta Berhad',
+            'rules' => [
+                'min_peratus_gaji_bersih' => 78, // Private sector - higher requirements
+            ],
+            'is_active' => true,
+            'created_at' => now()->subMonths(1),
+            'updated_at' => now()->subDays(14),
+        ]);
+
+        Koperasi::create([
+            'name' => 'Koperasi Mudah Lulus',
+            'rules' => [
+                'min_peratus_gaji_bersih' => 10, // Easiest to qualify
+            ],
+            'is_active' => true,
+            'created_at' => now()->subMonths(12),
+            'updated_at' => now()->subDays(11),
         ]);
     }
 }
