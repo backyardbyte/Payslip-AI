@@ -11,7 +11,7 @@ use Spatie\PdfToText\Pdf;
 
 class TestPayslipProcessing extends Command
 {
-    protected $signature = 'payslip:test-processing {file : Path to payslip file} {--show-text : Show extracted OCR text} {--verbose : Show detailed error information}';
+    protected $signature = 'payslip:test-processing {file? : Path to payslip file} {--payslip-id= : Test with existing payslip ID} {--show-text : Show extracted OCR text} {--verbose : Show detailed error information}';
     protected $description = 'Test payslip processing with enhanced debugging for Malaysian government payslips';
 
     public function handle()
@@ -19,12 +19,71 @@ class TestPayslipProcessing extends Command
         $this->info('Testing Enhanced Payslip Processing');
         $this->info('====================================');
 
+        // Handle existing payslip testing for production
+        if ($this->option('payslip-id')) {
+            return $this->testExistingPayslip($this->option('payslip-id'));
+        }
+
         $file = $this->argument('file');
+        if (!$file) {
+            $this->error('Please provide either a file path or --payslip-id option');
+            return 1;
+        }
+        
         if (!file_exists($file)) {
             $this->error("File does not exist: {$file}");
             return 1;
         }
 
+        return $this->testFileDirectly($file);
+    }
+
+    private function testExistingPayslip($payslipId)
+    {
+        $payslip = \App\Models\Payslip::find($payslipId);
+        if (!$payslip) {
+            $this->error("Payslip with ID {$payslipId} not found");
+            return 1;
+        }
+
+        $this->info("Testing existing payslip ID: {$payslipId}");
+        $this->info("File: {$payslip->file_path}");
+        $this->info("Current status: {$payslip->status}");
+
+        try {
+            // Get the service and process
+            $payslipService = app(\App\Services\PayslipProcessingService::class);
+            
+            // Reset payslip status
+            $payslip->update([
+                'status' => 'pending',
+                'processing_started_at' => null,
+                'processing_completed_at' => null,
+                'processing_error' => null,
+                'extracted_data' => null,
+            ]);
+
+            $this->info("Processing payslip with enhanced extraction...");
+            $result = $payslipService->processPayslip($payslip);
+            
+            $this->info("✅ Processing completed successfully!");
+            
+            // Display results
+            $this->displayResults($result);
+            
+            return 0;
+            
+        } catch (\Exception $e) {
+            $this->error('Processing failed: ' . $e->getMessage());
+            if ($this->option('verbose')) {
+                $this->error('Stack trace: ' . $e->getTraceAsString());
+            }
+            return 1;
+        }
+    }
+
+    private function testFileDirectly($file)
+    {
         try {
             // Test OCR extraction
             $this->info('Step 1: Testing OCR Text Extraction...');
@@ -51,23 +110,7 @@ class TestPayslipProcessing extends Command
             $this->info('✓ Data extraction completed');
             
             // Display extracted data
-            $this->info("\n--- EXTRACTED DATA ---");
-            foreach ($extractedData as $field => $value) {
-                if ($field === 'debug_patterns') {
-                    $this->info("Debug Patterns:");
-                    foreach ($value as $pattern) {
-                        $this->line("  - {$pattern}");
-                    }
-                } elseif ($field === 'confidence_scores') {
-                    $this->info("Confidence Scores:");
-                    foreach ($value as $scorefield => $score) {
-                        $this->line("  - {$scorefield}: {$score}%");
-                    }
-                } elseif (!is_array($value)) {
-                    $displayValue = $value !== null ? $value : 'NULL';
-                    $this->info("{$field}: {$displayValue}");
-                }
-            }
+            $this->displayExtractedData($extractedData);
 
             // Test summary section extraction specifically
             $this->info("\nStep 3: Testing Summary Section Extraction...");
@@ -141,6 +184,66 @@ class TestPayslipProcessing extends Command
 
         return 0;
     }
+
+    private function displayResults($result)
+    {
+        $this->info("\n--- PROCESSING RESULTS ---");
+        
+        if (isset($result['nama'])) {
+            $this->info("Name: " . $result['nama']);
+        }
+        if (isset($result['no_gaji'])) {
+            $this->info("Employee ID: " . $result['no_gaji']);
+        }
+        if (isset($result['bulan'])) {
+            $this->info("Period: " . $result['bulan']);
+        }
+        if (isset($result['gaji_pokok'])) {
+            $this->info("Basic Salary: RM " . number_format($result['gaji_pokok'], 2));
+        }
+        if (isset($result['jumlah_pendapatan'])) {
+            $this->info("Total Income: RM " . number_format($result['jumlah_pendapatan'], 2));
+        }
+        if (isset($result['jumlah_potongan'])) {
+            $this->info("Total Deductions: RM " . number_format($result['jumlah_potongan'], 2));
+        }
+        if (isset($result['gaji_bersih'])) {
+            $this->info("Net Salary: RM " . number_format($result['gaji_bersih'], 2));
+        }
+        if (isset($result['peratus_gaji_bersih'])) {
+            $this->info("Salary Percentage: " . $result['peratus_gaji_bersih'] . "%");
+        }
+
+        if (isset($result['processing_metadata']['confidence_score'])) {
+            $this->info("Confidence Score: " . $result['processing_metadata']['confidence_score'] . "%");
+        }
+
+        if (isset($result['koperasi_results'])) {
+            $eligible = array_filter($result['koperasi_results'], fn($r) => $r['eligible'] ?? false);
+            $this->info("Koperasi Eligible: " . count($eligible) . " out of " . count($result['koperasi_results']));
+        }
+    }
+
+    private function displayExtractedData($extractedData)
+    {
+        $this->info("\n--- EXTRACTED DATA ---");
+        foreach ($extractedData as $field => $value) {
+            if ($field === 'debug_patterns') {
+                $this->info("Debug Patterns:");
+                foreach ($value as $pattern) {
+                    $this->line("  - {$pattern}");
+                }
+            } elseif ($field === 'confidence_scores') {
+                $this->info("Confidence Scores:");
+                foreach ($value as $scorefield => $score) {
+                    $this->line("  - {$scorefield}: {$score}%");
+                }
+            } elseif (!is_array($value)) {
+                $displayValue = $value !== null ? $value : 'NULL';
+                $this->info("{$field}: {$displayValue}");
+            }
+        }
+    }
     
     /**
      * Perform OCR using OCR.space API
@@ -162,16 +265,21 @@ class TestPayslipProcessing extends Command
             // Determine file type
             $mimeType = mime_content_type($filePath);
             
-            // Prepare OCR.space API request
+            // Use the same enhanced settings as production
             $postData = [
                 'apikey' => $apiKey,
                 'base64Image' => 'data:' . $mimeType . ';base64,' . $base64,
                 // Remove language parameter for better compatibility with free API keys
-                'isOverlayRequired' => 'false',
+                'isOverlayRequired' => 'false', // False for better text extraction
                 'detectOrientation' => 'true',
                 'scale' => 'true',
-                'OCREngine' => '2',
-                'isTable' => 'true',
+                'OCREngine' => '1', // Engine 1 is better for structured documents
+                'isTable' => 'true', // Critical for Malaysian payslip tabular format
+                'filetype' => 'PDF',
+                'isCreateSearchablePdf' => 'false',
+                'isSearchablePdfHideTextLayer' => 'false',
+                'detectCheckbox' => 'false',
+                'checkboxTemplate' => '0',
             ];
             
             // Make API request
@@ -223,6 +331,48 @@ class TestPayslipProcessing extends Command
             foreach ($result['ParsedResults'] as $parsedResult) {
                 if (isset($parsedResult['ParsedText'])) {
                     $extractedText .= $parsedResult['ParsedText'] . "\n";
+                }
+            }
+            
+            // Try Engine 2 if initial result is poor
+            if (strlen($extractedText) < 500 || !preg_match('/gaji|pendapatan|potongan/i', $extractedText)) {
+                $this->info("OCR Engine 1 result poor, trying Engine 2...");
+                
+                $postData['OCREngine'] = '2';
+                
+                $ch2 = curl_init();
+                curl_setopt($ch2, CURLOPT_URL, 'https://api.ocr.space/parse/image');
+                curl_setopt($ch2, CURLOPT_POST, true);
+                curl_setopt($ch2, CURLOPT_POSTFIELDS, $postData);
+                curl_setopt($ch2, CURLOPT_RETURNTRANSFER, true);
+                curl_setopt($ch2, CURLOPT_TIMEOUT, 120);
+                curl_setopt($ch2, CURLOPT_CONNECTTIMEOUT, 30);
+                curl_setopt($ch2, CURLOPT_SSL_VERIFYPEER, false);
+                curl_setopt($ch2, CURLOPT_USERAGENT, 'Payslip-AI/1.0');
+                curl_setopt($ch2, CURLOPT_FOLLOWLOCATION, true);
+                
+                $response2 = curl_exec($ch2);
+                $httpCode2 = curl_getinfo($ch2, CURLINFO_HTTP_CODE);
+                curl_close($ch2);
+                
+                if ($httpCode2 === 200) {
+                    $result2 = json_decode($response2, true);
+                    if (isset($result2['ParsedResults'])) {
+                        $extractedText2 = '';
+                        foreach ($result2['ParsedResults'] as $parsedResult) {
+                            if (isset($parsedResult['ParsedText'])) {
+                                $extractedText2 .= $parsedResult['ParsedText'] . "\n";
+                            }
+                        }
+                        
+                        // Use Engine 2 if it's better
+                        if (strlen($extractedText2) > strlen($extractedText) * 1.2 || 
+                            preg_match_all('/gaji|pendapatan|potongan|peratus/i', $extractedText2) > 
+                            preg_match_all('/gaji|pendapatan|potongan|peratus/i', $extractedText)) {
+                            $this->info("Using Engine 2 result (better quality)");
+                            $extractedText = $extractedText2;
+                        }
+                    }
                 }
             }
             

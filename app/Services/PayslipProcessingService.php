@@ -776,109 +776,123 @@ class PayslipProcessingService
     }
 
     /**
-     * Validate and fix data relationships
+     * Validate and fix data relationships for Malaysian payslips
      */
     private function validateAndFixDataRelationships(array &$data): void
     {
-        // Fix 1: If Gaji Pokok is higher than expected vs Gaji Bersih
-        if ($data['gaji_pokok'] !== null && $data['gaji_bersih'] !== null) {
-            $ratio = $data['gaji_bersih'] / $data['gaji_pokok'];
+        // For Malaysian government payslips, validate the mathematical relationships
+        $jumlahPendapatan = $data['jumlah_pendapatan'] ?? null;
+        $jumlahPotongan = $data['jumlah_potongan'] ?? null;
+        $gajiBersih = $data['gaji_bersih'] ?? null;
+        $peratus = $data['peratus_gaji_bersih'] ?? null;
+
+        // Calculate missing values based on available data
+        if ($jumlahPendapatan !== null && $jumlahPotongan !== null && $gajiBersih === null) {
+            $calculatedGajiBersih = $jumlahPendapatan - $jumlahPotongan;
+            if ($calculatedGajiBersih > 0 && $calculatedGajiBersih < 50000) {
+                $data['gaji_bersih'] = round($calculatedGajiBersih, 2);
+                $data['debug_patterns'][] = "gaji_bersih: calculated from jumlah_pendapatan - jumlah_potongan";
+                $data['confidence_scores']['gaji_bersih'] = 90;
+            }
+        }
+
+        if ($jumlahPendapatan !== null && $gajiBersih !== null && $jumlahPotongan === null) {
+            $calculatedJumlahPotongan = $jumlahPendapatan - $gajiBersih;
+            if ($calculatedJumlahPotongan >= 0 && $calculatedJumlahPotongan < 20000) {
+                $data['jumlah_potongan'] = round($calculatedJumlahPotongan, 2);
+                $data['debug_patterns'][] = "jumlah_potongan: calculated from jumlah_pendapatan - gaji_bersih";
+                $data['confidence_scores']['jumlah_potongan'] = 90;
+            }
+        }
+
+        if ($jumlahPotongan !== null && $gajiBersih !== null && $jumlahPendapatan === null) {
+            $calculatedJumlahPendapatan = $jumlahPotongan + $gajiBersih;
+            if ($calculatedJumlahPendapatan > 0 && $calculatedJumlahPendapatan < 50000) {
+                $data['jumlah_pendapatan'] = round($calculatedJumlahPendapatan, 2);
+                $data['debug_patterns'][] = "jumlah_pendapatan: calculated from jumlah_potongan + gaji_bersih";
+                $data['confidence_scores']['jumlah_pendapatan'] = 90;
+            }
+        }
+
+        // Calculate percentage if missing
+        if ($gajiBersih !== null && $jumlahPendapatan !== null && $peratus === null) {
+            $calculatedPeratus = ($gajiBersih / $jumlahPendapatan) * 100;
+            if ($calculatedPeratus > 0 && $calculatedPeratus <= 100) {
+                $data['peratus_gaji_bersih'] = round($calculatedPeratus, 2);
+                $data['debug_patterns'][] = "peratus_gaji_bersih: calculated from (gaji_bersih / jumlah_pendapatan) * 100";
+                $data['confidence_scores']['peratus_gaji_bersih'] = 85;
+            }
+        }
+
+        // Validate mathematical consistency and flag potential OCR errors
+        if ($jumlahPendapatan !== null && $jumlahPotongan !== null && $gajiBersih !== null) {
+            $expectedGajiBersih = $jumlahPendapatan - $jumlahPotongan;
+            $difference = abs($gajiBersih - $expectedGajiBersih);
             
-            // Gaji Bersih should be less than Gaji Pokok (after deductions)
-            if ($ratio > 1.2) { // Allow some margin for allowances
-                $data['debug_patterns'][] = "WARNING: Gaji bersih (" . $data['gaji_bersih'] . ") higher than gaji pokok (" . $data['gaji_pokok'] . ") - possible extraction error";
+            // Allow small rounding differences but flag significant discrepancies
+            if ($difference > 0.1) {
+                // Check if any value seems obviously wrong due to OCR errors
+                $values = [
+                    'jumlah_pendapatan' => $jumlahPendapatan,
+                    'jumlah_potongan' => $jumlahPotongan,
+                    'gaji_bersih' => $gajiBersih
+                ];
                 
-                // If we have reliable percentage, recalculate gaji_bersih
-                if ($data['peratus_gaji_bersih'] !== null && $data['peratus_gaji_bersih'] <= 100) {
-                    $recalculated = round(($data['peratus_gaji_bersih'] / 100) * $data['gaji_pokok'], 2);
-                    if ($recalculated > 0 && $recalculated < $data['gaji_pokok']) {
-                        $data['gaji_bersih'] = $recalculated;
-                        $data['debug_patterns'][] = "FIXED: Recalculated gaji_bersih using percentage";
+                // If the difference is significant, use the most reliable calculation
+                if ($difference > 100) {
+                    // Major discrepancy - likely OCR error, recalculate gaji_bersih
+                    $data['gaji_bersih'] = round($expectedGajiBersih, 2);
+                    $data['debug_patterns'][] = "gaji_bersih: corrected due to mathematical inconsistency (diff: {$difference})";
+                    $data['confidence_scores']['gaji_bersih'] = 85;
+                }
+            }
+        }
+
+        // Fix obviously wrong values that might be OCR misreads
+        foreach (['jumlah_pendapatan', 'jumlah_potongan', 'gaji_bersih', 'gaji_pokok'] as $field) {
+            if (isset($data[$field]) && is_numeric($data[$field])) {
+                $value = $data[$field];
+                
+                // Check for obviously wrong values (too high/low)
+                if ($field === 'gaji_pokok' && ($value < 100 || $value > 50000)) {
+                    $data[$field] = null;
+                    $data['debug_patterns'][] = "{$field}: removed due to unrealistic value ({$value})";
+                } elseif (in_array($field, ['jumlah_pendapatan', 'gaji_bersih']) && ($value < 100 || $value > 100000)) {
+                    $data[$field] = null;
+                    $data['debug_patterns'][] = "{$field}: removed due to unrealistic value ({$value})";
+                } elseif ($field === 'jumlah_potongan' && ($value < 0 || $value > 50000)) {
+                    $data[$field] = null;
+                    $data['debug_patterns'][] = "{$field}: removed due to unrealistic value ({$value})";
+                }
+            }
+        }
+
+        // Percentage validation
+        if (isset($data['peratus_gaji_bersih']) && is_numeric($data['peratus_gaji_bersih'])) {
+            $peratusValue = $data['peratus_gaji_bersih'];
+            if ($peratusValue < 5 || $peratusValue > 100) {
+                $data['peratus_gaji_bersih'] = null;
+                $data['debug_patterns'][] = "peratus_gaji_bersih: removed due to unrealistic value ({$peratusValue})";
+            }
+        }
+
+        // Final consistency check - ensure gaji_pokok is reasonable compared to other values
+        if (isset($data['gaji_pokok']) && isset($data['jumlah_pendapatan'])) {
+            $gajiPokok = $data['gaji_pokok'];
+            $jumlahPendapatan = $data['jumlah_pendapatan'];
+            
+            // Basic salary should be a significant portion of total earnings (usually 60-90%)
+            if ($gajiPokok > 0 && $jumlahPendapatan > 0) {
+                $ratio = $gajiPokok / $jumlahPendapatan;
+                if ($ratio < 0.3 || $ratio > 1.2) {
+                    // Ratio seems wrong - might be OCR error
+                    $data['debug_patterns'][] = "gaji_pokok: flagged for unusual ratio to jumlah_pendapatan ({$ratio})";
+                    
+                    // If ratio is way off, remove the questionable value
+                    if ($ratio > 2.0 || $ratio < 0.1) {
+                        $data['gaji_pokok'] = null;
+                        $data['debug_patterns'][] = "gaji_pokok: removed due to unrealistic ratio to total earnings";
                     }
-                }
-            }
-            
-            // If ratio is too low (less than 20%), it might be an error
-            if ($ratio < 0.2 && $data['peratus_gaji_bersih'] !== null && $data['peratus_gaji_bersih'] > 20) {
-                $recalculated = round(($data['peratus_gaji_bersih'] / 100) * $data['gaji_pokok'], 2);
-                $data['gaji_bersih'] = $recalculated;
-                $data['debug_patterns'][] = "FIXED: Gaji bersih too low, recalculated using percentage";
-            }
-        }
-        
-        // Fix 2: Validate Jumlah Pendapatan vs Gaji Pokok
-        if ($data['jumlah_pendapatan'] !== null && $data['gaji_pokok'] !== null) {
-            // Jumlah Pendapatan should be >= Gaji Pokok (includes allowances)
-            if ($data['jumlah_pendapatan'] < $data['gaji_pokok']) {
-                $data['debug_patterns'][] = "WARNING: Jumlah pendapatan (" . $data['jumlah_pendapatan'] . ") less than gaji pokok (" . $data['gaji_pokok'] . ")";
-                
-                // If the difference is significant, the values might be swapped
-                if ($data['gaji_pokok'] / $data['jumlah_pendapatan'] > 2) {
-                    $temp = $data['jumlah_pendapatan'];
-                    $data['jumlah_pendapatan'] = $data['gaji_pokok'];
-                    $data['gaji_pokok'] = $temp;
-                    $data['debug_patterns'][] = "FIXED: Swapped jumlah_pendapatan and gaji_pokok";
-                }
-            }
-        }
-        
-        // Fix 3: Validate calculation: Gaji Bersih = Jumlah Pendapatan - Jumlah Potongan
-        if ($data['jumlah_pendapatan'] !== null && $data['jumlah_potongan'] !== null && $data['gaji_bersih'] !== null) {
-            $calculated_gaji_bersih = $data['jumlah_pendapatan'] - $data['jumlah_potongan'];
-            $difference = abs($calculated_gaji_bersih - $data['gaji_bersih']);
-            $tolerance = $data['gaji_bersih'] * 0.1; // 10% tolerance
-            
-            if ($difference > $tolerance) {
-                $data['debug_patterns'][] = "WARNING: Math doesn't add up - Pendapatan ({$data['jumlah_pendapatan']}) - Potongan ({$data['jumlah_potongan']}) ≠ Gaji Bersih ({$data['gaji_bersih']})";
-                
-                // If the calculated value is more reasonable, use it
-                if ($calculated_gaji_bersih > 0 && $calculated_gaji_bersih < 50000) {
-                    $data['gaji_bersih'] = round($calculated_gaji_bersih, 2);
-                    $data['debug_patterns'][] = "FIXED: Used calculated gaji_bersih = pendapatan - potongan";
-                }
-            }
-        }
-        
-        // Fix 4: Validate percentage calculation (be careful not to override correct extractions)
-        if ($data['peratus_gaji_bersih'] !== null && $data['gaji_bersih'] !== null && $data['gaji_pokok'] !== null) {
-            $calculated_percentage = round(($data['gaji_bersih'] / $data['gaji_pokok']) * 100, 2);
-            $difference = abs($calculated_percentage - $data['peratus_gaji_bersih']);
-            
-            if ($difference > 10) { // Increased tolerance - only fix if major discrepancy
-                $data['debug_patterns'][] = "WARNING: Major percentage mismatch - Calculated: {$calculated_percentage}%, Extracted: {$data['peratus_gaji_bersih']}%";
-                
-                // Only override if extracted percentage is clearly wrong (>100% or <0%)
-                if ($data['peratus_gaji_bersih'] > 100 || $data['peratus_gaji_bersih'] < 0) {
-                    if ($calculated_percentage > 0 && $calculated_percentage <= 100) {
-                        $data['peratus_gaji_bersih'] = $calculated_percentage;
-                        $data['debug_patterns'][] = "FIXED: Used calculated percentage (extracted was invalid)";
-                    }
-                } else {
-                    // Keep the extracted value as it's likely more accurate from the summary section
-                    $data['debug_patterns'][] = "KEPT: Using extracted percentage (likely more accurate from payslip)";
-                }
-            } else if ($difference > 5) {
-                $data['debug_patterns'][] = "INFO: Minor percentage difference - Calculated: {$calculated_percentage}%, Extracted: {$data['peratus_gaji_bersih']}%";
-            }
-        }
-        
-        // Fix 5: If we have percentage but missing gaji_bersih or gaji_pokok, try to calculate
-        if ($data['peratus_gaji_bersih'] !== null) {
-            // Calculate gaji_bersih if missing
-            if ($data['gaji_bersih'] === null && $data['gaji_pokok'] !== null) {
-                $calculated = round(($data['peratus_gaji_bersih'] / 100) * $data['gaji_pokok'], 2);
-                if ($calculated > 0 && $calculated < 50000) {
-                    $data['gaji_bersih'] = $calculated;
-                    $data['debug_patterns'][] = "CALCULATED: gaji_bersih from percentage × gaji_pokok";
-                }
-            }
-            
-            // Calculate gaji_pokok if missing
-            if ($data['gaji_pokok'] === null && $data['gaji_bersih'] !== null && $data['peratus_gaji_bersih'] > 0) {
-                $calculated = round(($data['gaji_bersih'] / $data['peratus_gaji_bersih']) * 100, 2);
-                if ($calculated > 0 && $calculated < 50000) {
-                    $data['gaji_pokok'] = $calculated;
-                    $data['debug_patterns'][] = "CALCULATED: gaji_pokok from gaji_bersih ÷ percentage";
                 }
             }
         }
@@ -1366,17 +1380,17 @@ class PayslipProcessingService
             // Determine file type
             $mimeType = mime_content_type($filePath);
             
-            // Prepare OCR.space API request with enhanced settings
+            // Enhanced OCR.space settings optimized for Malaysian government payslips
             $postData = [
                 'apikey' => $apiKey,
                 'base64Image' => 'data:' . $mimeType . ';base64,' . $base64,
                 // Remove language parameter for better compatibility with free API keys
-                'isOverlayRequired' => 'true', // Changed to true to get word coordinates
+                'isOverlayRequired' => 'false', // False for better text extraction
                 'detectOrientation' => 'true',
                 'scale' => 'true',
-                'OCREngine' => '1', // Engine 1 is more accurate for structured documents
-                'isTable' => 'true', // Better for structured documents like payslips
-                'filetype' => 'PDF', // Explicitly specify PDF
+                'OCREngine' => '1', // Engine 1 is better for structured documents
+                'isTable' => 'true', // Critical for Malaysian payslip tabular format
+                'filetype' => 'PDF',
                 'isCreateSearchablePdf' => 'false',
                 'isSearchablePdfHideTextLayer' => 'false',
                 'detectCheckbox' => 'false',
@@ -1389,12 +1403,12 @@ class PayslipProcessingService
             curl_setopt($ch, CURLOPT_POST, true);
             curl_setopt($ch, CURLOPT_POSTFIELDS, $postData);
             curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-            $ocrTimeout = $this->settingsService->get('ocr.api_timeout', 120); // Configurable timeout
+            $ocrTimeout = $this->settingsService->get('ocr.api_timeout', 120);
             curl_setopt($ch, CURLOPT_TIMEOUT, $ocrTimeout);
-            curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 30); // Connection timeout
+            curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 30);
             curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
-            curl_setopt($ch, CURLOPT_USERAGENT, 'Payslip-AI/1.0'); // User agent
-            curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true); // Follow redirects
+            curl_setopt($ch, CURLOPT_USERAGENT, 'Payslip-AI/1.0');
+            curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
             
             $response = curl_exec($ch);
             $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
@@ -1440,22 +1454,21 @@ class PayslipProcessingService
                 }
             }
             
-            if ($debugMode) {
-                Log::info('PayslipProcessingService OCR.space extraction completed', [
-                    'text_length' => strlen($extractedText),
-                    'file_parse_status' => $result['ParsedResults'][0]['FileParseExitCode'] ?? 'unknown'
-                ]);
+            // If extraction is too short or seems poor quality, try Engine 2 as fallback
+            $shouldTryEngine2 = false;
+            if (strlen($extractedText) < 500) {
+                $shouldTryEngine2 = true;
+                Log::info('OCR text too short, will try Engine 2', ['length' => strlen($extractedText)]);
+            } elseif (!preg_match('/gaji|pendapatan|potongan/i', $extractedText)) {
+                $shouldTryEngine2 = true;
+                Log::info('OCR text missing key Malaysian payslip terms, will try Engine 2');
             }
             
-            // If extraction is too short, try OCR Engine 2 as fallback
-            if (strlen($extractedText) < 500 && $postData['OCREngine'] !== '2') {
-                Log::info('OCR text too short, trying Engine 2 as fallback', [
-                    'first_attempt_length' => strlen($extractedText)
-                ]);
+            if ($shouldTryEngine2 && $postData['OCREngine'] !== '2') {
+                Log::info('Trying OCR Engine 2 for better results');
                 
                 // Try again with Engine 2
                 $postData['OCREngine'] = '2';
-                // Remove language parameter for Engine 2 as well
                 
                 $ch2 = curl_init();
                 curl_setopt($ch2, CURLOPT_URL, 'https://api.ocr.space/parse/image');
@@ -1482,16 +1495,37 @@ class PayslipProcessingService
                             }
                         }
                         
-                        // Use Engine 2 result if it's longer
-                        if (strlen($extractedText2) > strlen($extractedText)) {
-                            Log::info('Using Engine 2 result (longer text)', [
+                        // Use Engine 2 result if it's longer or has better key terms
+                        $engine2Better = false;
+                        if (strlen($extractedText2) > strlen($extractedText) * 1.2) {
+                            $engine2Better = true;
+                        } elseif (preg_match_all('/gaji|pendapatan|potongan|peratus/i', $extractedText2) > 
+                                  preg_match_all('/gaji|pendapatan|potongan|peratus/i', $extractedText)) {
+                            $engine2Better = true;
+                        }
+                        
+                        if ($engine2Better) {
+                            Log::info('Using Engine 2 result (better quality)', [
                                 'engine1_length' => strlen($extractedText),
-                                'engine2_length' => strlen($extractedText2)
+                                'engine2_length' => strlen($extractedText2),
+                                'engine1_terms' => preg_match_all('/gaji|pendapatan|potongan|peratus/i', $extractedText),
+                                'engine2_terms' => preg_match_all('/gaji|pendapatan|potongan|peratus/i', $extractedText2)
                             ]);
                             $extractedText = $extractedText2;
                         }
                     }
                 }
+            }
+            
+            // Post-process the text for better Malaysian payslip parsing
+            $extractedText = $this->postProcessOCRText($extractedText);
+            
+            if ($debugMode) {
+                Log::info('PayslipProcessingService OCR.space extraction completed', [
+                    'text_length' => strlen($extractedText),
+                    'file_parse_status' => $result['ParsedResults'][0]['FileParseExitCode'] ?? 'unknown',
+                    'key_terms_found' => preg_match_all('/gaji|pendapatan|potongan|peratus/i', $extractedText)
+                ]);
             }
             
             return trim($extractedText);
@@ -1504,6 +1538,40 @@ class PayslipProcessingService
             
             throw new \Exception('OCR.space processing failed: ' . $e->getMessage() . '. Please check your OCR.space API key configuration.');
         }
+    }
+
+    /**
+     * Post-process OCR text to improve Malaysian payslip parsing
+     */
+    private function postProcessOCRText(string $text): string
+    {
+        // Fix common OCR errors in Malaysian payslips
+        $fixes = [
+            // Fix common number recognition issues
+            '/(\d)\s+,\s+(\d)/' => '$1,$2', // Fix "1 , 234" to "1,234"
+            '/(\d)\s+\.\s+(\d)/' => '$1.$2', // Fix "123 . 45" to "123.45"
+            
+            // Fix common word recognition issues
+            '/gaj\s*i/i' => 'gaji',
+            '/pok\s*ok/i' => 'pokok',
+            '/pen\s*da\s*pa\s*tan/i' => 'pendapatan',
+            '/pot\s*on\s*gan/i' => 'potongan',
+            '/ber\s*sih/i' => 'bersih',
+            '/per\s*a\s*tus/i' => 'peratus',
+            '/jum\s*lah/i' => 'jumlah',
+            
+            // Fix spacing around colons
+            '/\s*:\s*/' => ': ',
+            
+            // Fix multiple spaces
+            '/\s+/' => ' ',
+        ];
+        
+        foreach ($fixes as $pattern => $replacement) {
+            $text = preg_replace($pattern, $replacement, $text);
+        }
+        
+        return $text;
     }
 
     private function performTesseractOCR(string $filePath): string
