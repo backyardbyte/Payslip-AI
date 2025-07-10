@@ -1316,7 +1316,7 @@ class PayslipProcessingService
             $postData = [
                 'apikey' => $apiKey,
                 'base64Image' => 'data:' . $mimeType . ';base64,' . $base64,
-                'language' => 'msa', // Prioritize Malay for payslips
+                // Remove language parameter for better compatibility with free API keys
                 'isOverlayRequired' => 'true', // Changed to true to get word coordinates
                 'detectOrientation' => 'true',
                 'scale' => 'true',

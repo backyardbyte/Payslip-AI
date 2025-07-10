@@ -160,7 +160,7 @@ class TestPayslipProcessing extends Command
             $postData = [
                 'apikey' => $apiKey,
                 'base64Image' => 'data:' . $mimeType . ';base64,' . $base64,
-                'language' => 'eng',
+                // Remove language parameter for better compatibility with free API keys
                 'isOverlayRequired' => 'false',
                 'detectOrientation' => 'true',
                 'scale' => 'true',

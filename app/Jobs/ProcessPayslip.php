@@ -120,7 +120,7 @@ class ProcessPayslip implements ShouldQueue
             $postData = [
                 'apikey' => $apiKey,
                 'base64Image' => 'data:' . $mimeType . ';base64,' . $base64,
-                'language' => 'eng', // English (OCR.space doesn't support eng+msa format)
+                // Remove language parameter for better compatibility with free API keys
                 'isOverlayRequired' => 'false',
                 'detectOrientation' => 'true',
                 'scale' => 'true',
