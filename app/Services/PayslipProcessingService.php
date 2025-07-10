@@ -46,13 +46,14 @@ class PayslipProcessingService
             // Extract text from file
             $extractionResult = $this->extractTextFromFile($payslip);
             $text = $extractionResult['text'];
+            $ocrResult = $extractionResult['ocr_result'] ?? null;
 
             if (empty($text)) {
                 throw new \Exception('No text could be extracted from the file');
             }
 
             // Process and extract payslip data
-            $extractedData = $this->extractPayslipDataAdvanced($text);
+            $extractedData = $this->extractPayslipDataAdvanced($text, $ocrResult);
             
             // Log the extracted text for debugging if fields are missing
             if ($debugMode || $this->hasMissingCriticalFields($extractedData)) {
@@ -140,23 +141,27 @@ class PayslipProcessingService
         $mimeType = Storage::mimeType($payslip->file_path);
         $text = '';
         $method = 'unknown';
+        $ocrResult = null;
 
         if ($mimeType === 'application/pdf') {
             try {
                 $text = $this->extractPdfText($filePath);
                 $method = 'pdftotext';
             } catch (\Exception $e) {
-                $text = $this->performOCRSpace($filePath);
+                $ocrResult = $this->performOCRSpace($filePath);
+                $text = $this->getTextFromOcrResult($ocrResult);
                 $method = 'ocr_space_fallback';
             }
         } else {
             $ocrMethod = $this->settingsService->get('ocr.method', 'ocrspace');
             
             if ($ocrMethod === 'ocrspace') {
-                $text = $this->performOCRSpace($filePath);
+                $ocrResult = $this->performOCRSpace($filePath);
+                $text = $this->getTextFromOcrResult($ocrResult);
                 $method = 'ocr_space';
             } else {
-                $text = $this->performTesseractOCR($filePath);
+                $ocrResult = $this->performTesseractOCR($filePath);
+                $text = $this->getTextFromOcrResult($ocrResult);
                 $method = 'tesseract';
             }
         }
@@ -164,7 +169,8 @@ class PayslipProcessingService
         return [
             'text' => $text,
             'method' => $method,
-            'text_length' => strlen($text)
+            'text_length' => strlen($text),
+            'ocr_result' => $ocrResult,
         ];
     }
 
@@ -186,304 +192,165 @@ class PayslipProcessingService
         // Also create a version without line breaks for cross-line matching
         $textNoBreaks = preg_replace('/\s+/', ' ', $text);
         
-        // Handle the grouped summary format: 
-        // Field names listed together, then colons together, then values together
+        // Handle the most common Malaysian government payslip format where the summary appears like:
+        // Jumlah Potongan
+        // Gaji Bersih  
+        // % Peratus Gaji Bersih
+        // 
+        // :
+        // :
+        // :
+        //
+        // 8,014.46
+        // 1,252.03
+        // 13.51
+        
+        // Find the index of the summary labels
+        $jumlahPotonganIndex = -1;
+        $gajiBersihIndex = -1;
+        $peratusIndex = -1;
+        $colonStartIndex = -1;
+        
         for ($i = 0; $i < count($lines); $i++) {
             $line = trim($lines[$i]);
+            $lineLower = strtolower($line);
             
-            // Look for the grouped summary pattern starting with "Jumlah Potongan"
+            // Find the summary section by looking for the pattern of labels
             if (preg_match('/^jumlah\s+potongan\s*$/i', $line)) {
-                // Check if next lines contain "Gaji Bersih" and "% Peratus Gaji Bersih"
-                $nextLine1 = isset($lines[$i+1]) ? trim($lines[$i+1]) : '';
-                $nextLine2 = isset($lines[$i+2]) ? trim($lines[$i+2]) : '';
+                $jumlahPotonganIndex = $i;
                 
-                if (preg_match('/^gaji\s+bersih\s*$/i', $nextLine1) && 
-                    preg_match('/^%\s*peratus\s+gaji\s+bersih\s*$/i', $nextLine2)) {
-                    
-                    // Found the grouped format, now look for the colons and values
-                    for ($j = $i + 3; $j < count($lines) && $j < $i + 10; $j++) {
-                        $colonLine = trim($lines[$j]);
+                // Look for subsequent labels
+                for ($j = $i + 1; $j < min($i + 5, count($lines)); $j++) {
+                    $nextLine = trim($lines[$j]);
+                    if (preg_match('/^gaji\s+bersih\s*$/i', $nextLine)) {
+                        $gajiBersihIndex = $j;
+                    } else if (preg_match('/^%?\s*peratus\s+gaji\s+bersih\s*$/i', $nextLine)) {
+                        $peratusIndex = $j;
+                    }
+                }
+                
+                // Look for the colons section after the labels
+                for ($j = max($jumlahPotonganIndex, $gajiBersihIndex, $peratusIndex) + 1; $j < count($lines) && $j < $i + 10; $j++) {
+                    $colonLine = trim($lines[$j]);
+                    // Check if this line contains only colons (possibly multiple)
+                    if (preg_match('/^:+\s*$/', $colonLine)) {
+                        $colonStartIndex = $j;
                         
-                        // Look for the line with multiple colons
-                        if (preg_match('/^\s*:\s*:\s*:\s*$/', $colonLine) || 
-                            (preg_match('/^\s*:\s*$/', $colonLine) && 
-                             isset($lines[$j+1]) && preg_match('/^\s*:\s*$/', trim($lines[$j+1])) &&
-                             isset($lines[$j+2]) && preg_match('/^\s*:\s*$/', trim($lines[$j+2])))) {
-                            
-                            // Find the values after the colons
-                            $valueStartIndex = $j + 1;
-                            if (preg_match('/^\s*:\s*:\s*:\s*$/', $colonLine)) {
-                                // Single line with three colons
-                                $valueStartIndex = $j + 1;
+                        // Count how many colons are on subsequent lines to understand the format
+                        $colonCount = 1;
+                        for ($k = $j + 1; $k < count($lines) && $k < $j + 5; $k++) {
+                            if (preg_match('/^:+\s*$/', trim($lines[$k]))) {
+                                $colonCount++;
                             } else {
-                                // Multiple lines with single colons
-                                $valueStartIndex = $j + 3;
+                                break;
                             }
-                            
-                            $values = [];
-                            for ($k = $valueStartIndex; $k < count($lines) && $k < $valueStartIndex + 5; $k++) {
-                                $valueLine = trim($lines[$k]);
-                                if (preg_match('/^([\d,]+\.\d{2})\s*$/', $valueLine, $matches)) {
-                                    $values[] = (float) str_replace(',', '', $matches[1]);
-                                }
+                        }
+                        
+                        // Now look for the values after the colons
+                        $valueStartIndex = $colonStartIndex + $colonCount;
+                        $values = [];
+                        
+                        // Collect numeric values after the colons
+                        for ($k = $valueStartIndex; $k < count($lines) && $k < $valueStartIndex + 10; $k++) {
+                            $valueLine = trim($lines[$k]);
+                            if (preg_match('/^([\d,]+\.?\d*)\s*$/', $valueLine, $matches)) {
+                                $values[] = (float) str_replace(',', '', $matches[1]);
+                            } else if (!empty($valueLine) && !preg_match('/\(.*\)/', $valueLine) && !preg_match('/sila|bank|cukai/i', $valueLine)) {
+                                // Stop if we hit non-numeric content that's not a note
+                                break;
                             }
-                            
-                            // Assign values in order: Jumlah Potongan, Gaji Bersih, Peratus Gaji Bersih
-                            if (count($values) >= 1) {
-                                $data['jumlah_potongan'] = $values[0];
-                            }
-                            if (count($values) >= 2) {
-                                $data['gaji_bersih'] = $values[1];
-                            }
-                            if (count($values) >= 3) {
-                                $data['peratus_gaji_bersih'] = $values[2];
-                            }
-                            
-                            break;
+                        }
+                        
+                        // Map values based on the order of labels found
+                        if ($jumlahPotonganIndex >= 0 && $gajiBersihIndex > $jumlahPotonganIndex && $peratusIndex > $gajiBersihIndex) {
+                            // Standard order: Jumlah Potongan, Gaji Bersih, Peratus
+                            if (count($values) >= 1) $data['jumlah_potongan'] = $values[0];
+                            if (count($values) >= 2) $data['gaji_bersih'] = $values[1];
+                            if (count($values) >= 3) $data['peratus_gaji_bersih'] = $values[2];
+                        } else if (count($values) == 3) {
+                            // Assume standard order if we have exactly 3 values
+                            $data['jumlah_potongan'] = $values[0];
+                            $data['gaji_bersih'] = $values[1];
+                            $data['peratus_gaji_bersih'] = $values[2];
+                        }
+                        
+                        break;
+                    }
+                }
+                
+                // If we found the summary section, stop looking
+                if ($colonStartIndex >= 0) {
+                    break;
+                }
+            }
+        }
+        
+        // Alternative pattern: Look for "Jumlah Pendapatan" which often appears separately
+        for ($i = 0; $i < count($lines) - 2; $i++) {
+            $line = trim($lines[$i]);
+            
+            if (preg_match('/^jumlah\s+pendapatan\s*$/i', $line)) {
+                // Check if next line is a colon
+                if (isset($lines[$i+1]) && preg_match('/^\s*:\s*$/', trim($lines[$i+1]))) {
+                    // Value should be on the line after the colon
+                    if (isset($lines[$i+2])) {
+                        $valueLine = trim($lines[$i+2]);
+                        if (preg_match('/^([\d,]+\.?\d*)\s*$/', $valueLine, $matches)) {
+                            $data['jumlah_pendapatan'] = (float) str_replace(',', '', $matches[1]);
                         }
                     }
                 }
             }
+        }
+        
+        // Fallback patterns for different formats
+        if ($data['jumlah_pendapatan'] === null || $data['jumlah_potongan'] === null || 
+            $data['gaji_bersih'] === null || $data['peratus_gaji_bersih'] === null) {
             
-            // Handle individual "Jumlah Pendapatan" in its own section
-            if (preg_match('/^jumlah\s+pendapatan\s*$/i', $line) && isset($lines[$i+1])) {
-                $nextLine = trim($lines[$i+1]);
-                if (preg_match('/^\s*:\s*$/', $nextLine) && isset($lines[$i+2])) {
-                    $valueLine = trim($lines[$i+2]);
-                    if (preg_match('/^([\d,]+\.\d{2})\s*$/', $valueLine, $matches)) {
-                        $data['jumlah_pendapatan'] = (float) str_replace(',', '', $matches[1]);
+            // Try single-line patterns as fallback
+            for ($i = 0; $i < count($lines); $i++) {
+                $line = trim($lines[$i]);
+                
+                // Jumlah Pendapatan with colon and value on same line
+                if ($data['jumlah_pendapatan'] === null && preg_match('/jumlah\s+pendapatan\s*:\s*([\d,]+\.?\d*)/i', $line, $matches)) {
+                    $data['jumlah_pendapatan'] = (float) str_replace(',', '', $matches[1]);
+                }
+                
+                // Jumlah Potongan with colon and value on same line
+                if ($data['jumlah_potongan'] === null && preg_match('/jumlah\s+potongan\s*:\s*([\d,]+\.?\d*)/i', $line, $matches)) {
+                    $value = (float) str_replace(',', '', $matches[1]);
+                    if ($value >= 0 && $value < 20000) {
+                        $data['jumlah_potongan'] = $value;
                     }
                 }
-                // Also check if the value is directly on the next line with colon
-                elseif (preg_match('/^\s*:\s*([\d,]+\.\d{2})\s*$/', $nextLine, $matches)) {
-                    $data['jumlah_pendapatan'] = (float) str_replace(',', '', $matches[1]);
-                }
-            }
-            
-            // Handle multiline format: "Jumlah Pendapatan" followed by ": 5,982.76"
-            if (preg_match('/^jumlah\s+pendapatan\s*$/i', $line) && isset($lines[$i+1])) {
-                $nextLine = trim($lines[$i+1]);
-                if (preg_match('/^\s*:\s*([\d,]+\.\d{2})\s*$/', $nextLine, $matches)) {
-                    $data['jumlah_pendapatan'] = (float) str_replace(',', '', $matches[1]);
-                    continue;
-                }
-            }
-            
-            // Handle multiline format: "Jumlah Potongan" followed by ": 3,277.40"  
-            if (preg_match('/^jumlah\s+potongan\s*$/i', $line) && isset($lines[$i+1])) {
-                $nextLine = trim($lines[$i+1]);
-                if (preg_match('/^\s*:\s*([\d,]+\.\d{2})\s*$/', $nextLine, $matches)) {
-                    $data['jumlah_potongan'] = (float) str_replace(',', '', $matches[1]);
-                    continue;
-                }
-            }
-            
-            // Handle multiline format: "Gaji Bersih" followed by ": 2,705.36"
-            if (preg_match('/^gaji\s+bersih\s*$/i', $line) && isset($lines[$i+1])) {
-                $nextLine = trim($lines[$i+1]);
-                if (preg_match('/^\s*:\s*([\d,]+\.\d{2})\s*$/', $nextLine, $matches)) {
-                    $data['gaji_bersih'] = (float) str_replace(',', '', $matches[1]);
-                    continue;
-                }
-            }
-            
-            // Handle multiline format: "% Peratus Gaji Bersih" followed by ": 45.22"
-            if (preg_match('/^%\s*peratus\s+gaji\s+bersih\s*$/i', $line) && isset($lines[$i+1])) {
-                $nextLine = trim($lines[$i+1]);
-                if (preg_match('/^\s*:\s*([\d,]+\.\d{2})\s*$/', $nextLine, $matches)) {
-                    $data['peratus_gaji_bersih'] = (float) str_replace(',', '', $matches[1]);
-                    continue;
-                }
-            }
-            
-            // Handle side-by-side format like: "Jumlah Pendapatan : 5,982.76 Jumlah Potongan : 3,277.40"
-            if (preg_match('/jumlah\s+pendapatan\s*:\s*([\d,]+\.\d{2}).*?jumlah\s+potongan\s*:\s*([\d,]+\.\d{2})/i', $line, $matches)) {
-                $data['jumlah_pendapatan'] = (float) str_replace(',', '', $matches[1]);
-                $data['jumlah_potongan'] = (float) str_replace(',', '', $matches[2]);
-                continue;
-            }
-            
-            // Handle side-by-side format like: "Pendapatan Bercukai : 4,672.76 Gaji Bersih : 2,705.36"
-            if (preg_match('/pendapatan\s+bercukai\s*:\s*([\d,]+\.\d{2}).*?gaji\s+bersih\s*:\s*([\d,]+\.\d{2})/i', $line, $matches)) {
-                $data['gaji_bersih'] = (float) str_replace(',', '', $matches[2]);
-                continue;
-            }
-            
-            // Handle side-by-side format specifically for Malaysian payslips: "Jumlah Potongan : 368.30 Gaji Bersih : 3,845.31"
-            if (preg_match('/jumlah\s+potongan\s*:\s*([\d,]+\.\d{2}).*?gaji\s+bersih\s*:\s*([\d,]+\.\d{2})/i', $line, $matches)) {
-                $potongan = (float) str_replace(',', '', $matches[1]);
-                $gaji_bersih = (float) str_replace(',', '', $matches[2]);
                 
-                // Validate values are reasonable before assigning
-                if ($potongan >= 0 && $potongan < 20000 && $data['jumlah_potongan'] === null) {
-                    $data['jumlah_potongan'] = $potongan;
+                // Gaji Bersih with colon and value on same line
+                if ($data['gaji_bersih'] === null && preg_match('/gaji\s+bersih\s*:\s*([\d,]+\.?\d*)/i', $line, $matches)) {
+                    $value = (float) str_replace(',', '', $matches[1]);
+                    if ($value > 0 && $value < 50000) {
+                        $data['gaji_bersih'] = $value;
+                    }
                 }
-                if ($gaji_bersih > 0 && $gaji_bersih < 50000 && $data['gaji_bersih'] === null) {
-                    $data['gaji_bersih'] = $gaji_bersih;
-                }
-                continue;
-            }
-            
-            // Handle another side-by-side format: "Jumlah Pendapatan : 4,926.10 Jumlah Potongan : 2,962.50"
-            if (preg_match('/jumlah\s+pendapatan\s*:\s*([\d,]+\.\d{2}).*?jumlah\s+potongan\s*:\s*([\d,]+\.\d{2})/i', $line, $matches)) {
-                $pendapatan = (float) str_replace(',', '', $matches[1]);
-                $potongan = (float) str_replace(',', '', $matches[2]);
                 
-                // Validate and assign values
-                if ($pendapatan > 0 && $pendapatan < 50000 && $data['jumlah_pendapatan'] === null) {
-                    $data['jumlah_pendapatan'] = $pendapatan;
-                }
-                if ($potongan >= 0 && $potongan < 20000 && $data['jumlah_potongan'] === null) {
-                    $data['jumlah_potongan'] = $potongan;
-                }
-                continue;
-            }
-            
-            // Handle the percentage line that often comes after gaji bersih: "% Peratus Gaji Bersih : 91.26"
-            if (preg_match('/%\s*peratus\s+gaji\s+bersih\s*:\s*([\d,]+\.?\d*)/i', $line, $matches)) {
-                $data['peratus_gaji_bersih'] = (float) str_replace(',', '', $matches[1]);
-                continue;
-            }
-            
-            // Handle cases where percentage is on same line after gaji bersih
-            if (preg_match('/gaji\s+bersih\s*:\s*([\d,]+\.\d{2}).*?%\s*peratus\s+gaji\s+bersih\s*:\s*([\d,]+\.?\d*)/i', $line, $matches)) {
-                $data['gaji_bersih'] = (float) str_replace(',', '', $matches[1]);
-                $data['peratus_gaji_bersih'] = (float) str_replace(',', '', $matches[2]);
-                continue;
-            }
-            
-            // Extract individual fields if side-by-side patterns don't match
-            
-            // Extract Jumlah Pendapatan - handle spacing variations
-            if (preg_match('/^jumlah\s+pendapatan\s*[:]*\s*([\d,]+\.\d{2})/i', $line, $matches)) {
-                $data['jumlah_pendapatan'] = (float) str_replace(',', '', $matches[1]);
-                continue;
-            }
-            
-            // Look for standalone value that could be Jumlah Pendapatan if we found the label earlier
-            if (preg_match('/^([\d,]+\.\d{2})\s*$/', $line, $matches) && $data['jumlah_pendapatan'] === null) {
-                // Check previous lines for "Jumlah Pendapatan" 
-                for ($k = max(0, $i-5); $k < $i; $k++) {
-                    $prevLine = trim($lines[$k]);
-                    if (preg_match('/^jumlah\s+pendapatan\s*$/i', $prevLine)) {
-                        $value = (float) str_replace(',', '', $matches[1]);
-                        // Validate it's a reasonable total income amount
-                        if ($value > 1000 && $value < 50000) {
-                            $data['jumlah_pendapatan'] = $value;
-                            break;
-                        }
+                // Peratus with colon and value on same line
+                if ($data['peratus_gaji_bersih'] === null && preg_match('/%?\s*peratus\s+gaji\s+bersih\s*:\s*([\d,]+\.?\d*)/i', $line, $matches)) {
+                    $value = (float) str_replace(',', '', $matches[1]);
+                    if ($value >= 0 && $value <= 100) {
+                        $data['peratus_gaji_bersih'] = $value;
                     }
                 }
             }
-            
-            // Extract Jumlah Potongan - be more specific and handle different formats
-            if (preg_match('/jumlah\s+potongan\s*[:\s]*\s*([\d,]+\.\d{2})/i', $line, $matches)) {
-                $value = (float) str_replace(',', '', $matches[1]);
-                // Validate that it's a reasonable deduction amount (not too high)
-                if ($value >= 0 && $value < 20000) {
-                    $data['jumlah_potongan'] = $value;
-                    continue;
-                }
-            }
-            
-            // Extract Gaji Bersih - be more specific and avoid confusion with percentage
-            if (preg_match('/^gaji\s+bersih\s*[:]*\s*([\d,]+\.\d{2})(?!\s*%)/i', $line, $matches)) {
-                $data['gaji_bersih'] = (float) str_replace(',', '', $matches[1]);
-                continue;
-            }
-            
-            // Extract % Peratus Gaji Bersih - improved patterns for Malaysian format
-            if (preg_match('/^%?\s*peratus\s+gaji\s+bersih\s*[:]*\s*([\d,]+\.?\d*)/i', $line, $matches)) {
-                $value = (float) str_replace(',', '', $matches[1]);
-                // Validate percentage range (should be between 0-100)
-                if ($value >= 0 && $value <= 100) {
-                    $data['peratus_gaji_bersih'] = $value;
-                }
-                continue;
-            }
-            
-            // Alternative pattern for percentage without % symbol at start
-            if (preg_match('/peratus\s+gaji\s+bersih\s*[:]*\s*([\d,]+\.?\d*)\s*$/i', $line, $matches)) {
-                $value = (float) str_replace(',', '', $matches[1]);
-                if ($value >= 0 && $value <= 100) {
-                    $data['peratus_gaji_bersih'] = $value;
-                }
-                continue;
-            }
         }
         
-        // Final attempt: Look for patterns in the complete text without line breaks
-        if ($data['peratus_gaji_bersih'] === null) {
-            // Pattern for percentage that might be across lines
-            if (preg_match('/%\s*peratus\s+gaji\s+bersih\s*:?\s*([\d,]+\.?\d*)/i', $textNoBreaks, $matches)) {
-                $value = (float) str_replace(',', '', $matches[1]);
-                if ($value >= 0 && $value <= 100) {
-                    $data['peratus_gaji_bersih'] = $value;
-                }
-            }
-        }
-        
-        // Enhanced summary section extraction - look for the bottom summary area
-        $summaryLines = array_slice($lines, -15); // Last 15 lines typically contain summary
-        $summaryText = implode(' ', $summaryLines);
-        
-        // Extract from summary section with priority (overwrites previous matches)
-        if (preg_match('/jumlah\s+pendapatan\s*:\s*([\d,]+\.\d{2})/i', $summaryText, $matches)) {
-            $value = (float) str_replace(',', '', $matches[1]);
-            if ($value > 0 && $value < 50000) {
-                $data['jumlah_pendapatan'] = $value;
-            }
-        }
-        
-        if (preg_match('/jumlah\s+potongan\s*:\s*([\d,]+\.\d{2})/i', $summaryText, $matches)) {
-            $value = (float) str_replace(',', '', $matches[1]);
-            if ($value >= 0 && $value < 20000) {
-                $data['jumlah_potongan'] = $value;
-            }
-        }
-        
-        if (preg_match('/gaji\s+bersih\s*:\s*([\d,]+\.\d{2})/i', $summaryText, $matches)) {
-            $value = (float) str_replace(',', '', $matches[1]);
-            if ($value > 0 && $value < 50000) {
-                $data['gaji_bersih'] = $value;
-            }
-        }
-        
-        if (preg_match('/%?\s*peratus\s+gaji\s+bersih\s*:\s*([\d,]+\.?\d*)/i', $summaryText, $matches)) {
-            $value = (float) str_replace(',', '', $matches[1]);
-            if ($value >= 0 && $value <= 100) {
-                $data['peratus_gaji_bersih'] = $value;
-            }
-        }
-        
-                    // Look for the specific Malaysian government payslip format in the summary
-        // This often appears at the bottom with specific formatting
-        if (preg_match('/pendapatan\s+bercukai\s*:\s*([\d,]+\.?\d*)\s+gaji\s+bersih\s*:\s*([\d,]+\.?\d*)\s+%?\s*peratus\s+gaji\s+bersih\s*:\s*([\d,]+\.?\d*)/i', $textNoBreaks, $matches)) {
-            if ($data['gaji_bersih'] === null) {
-                $data['gaji_bersih'] = (float) str_replace(',', '', $matches[2]);
-            }
-            if ($data['peratus_gaji_bersih'] === null) {
-                $value = (float) str_replace(',', '', $matches[3]);
-                if ($value >= 0 && $value <= 100) {
-                    $data['peratus_gaji_bersih'] = $value;
-                }
-            }
-        }
-        
-        // Additional pattern for summary where jumlah potongan, gaji bersih, and percentage appear together
-        if (preg_match('/jumlah\s+potongan\s*:\s*([\d,]+\.?\d*)\s+gaji\s+bersih\s*:\s*([\d,]+\.?\d*)\s+%?\s*peratus\s+gaji\s+bersih\s*:\s*([\d,]+\.?\d*)/i', $textNoBreaks, $matches)) {
-            if ($data['jumlah_potongan'] === null) {
-                $data['jumlah_potongan'] = (float) str_replace(',', '', $matches[1]);
-            }
-            if ($data['gaji_bersih'] === null) {
-                $data['gaji_bersih'] = (float) str_replace(',', '', $matches[2]);
-            }
-            if ($data['peratus_gaji_bersih'] === null) {
-                $value = (float) str_replace(',', '', $matches[3]);
-                if ($value >= 0 && $value <= 100) {
-                    $data['peratus_gaji_bersih'] = $value;
-                }
-            }
+        // Log extraction results for debugging
+        if (array_filter($data)) {
+            Log::info('Summary section extraction results', [
+                'jumlah_pendapatan' => $data['jumlah_pendapatan'],
+                'jumlah_potongan' => $data['jumlah_potongan'],
+                'gaji_bersih' => $data['gaji_bersih'],
+                'peratus_gaji_bersih' => $data['peratus_gaji_bersih'],
+                'extraction_method' => $colonStartIndex >= 0 ? 'multi-line-colon-format' : 'single-line-fallback'
+            ]);
         }
         
         return $data;
@@ -698,7 +565,7 @@ class PayslipProcessingService
     /**
      * Enhanced payslip data extraction
      */
-    private function extractPayslipDataAdvanced(string $text): array
+    private function extractPayslipDataAdvanced(string $text, ?array $ocrResult = null): array
     {
         $data = [
             'peratus_gaji_bersih' => null,
@@ -1425,7 +1292,7 @@ class PayslipProcessingService
         return (new Pdf($pdfToTextPath))->setPdf($filePath)->text();
     }
 
-    private function performOCRSpace(string $filePath): string
+    private function performOCRSpace(string $filePath): array
     {
         // Fix API key retrieval - check if settings value is empty and fallback to env
         $settingsApiKey = $this->settingsService->get('ocr.ocrspace_api_key');
@@ -1449,8 +1316,8 @@ class PayslipProcessingService
             $postData = [
                 'apikey' => $apiKey,
                 'base64Image' => 'data:' . $mimeType . ';base64,' . $base64,
-                'language' => 'eng', // English (OCR.space doesn't support eng+msa format)
-                'isOverlayRequired' => 'false',
+                'language' => 'msa', // Prioritize Malay for payslips
+                'isOverlayRequired' => 'true', // Changed to true to get word coordinates
                 'detectOrientation' => 'true',
                 'scale' => 'true',
                 'OCREngine' => '1', // Engine 1 is more accurate for structured documents
@@ -1534,7 +1401,7 @@ class PayslipProcessingService
                 
                 // Try again with Engine 2
                 $postData['OCREngine'] = '2';
-                $postData['language'] = 'eng'; // Ensure language is still valid
+                $postData['language'] = 'auto'; // Use language auto-detection for Engine 2
                 
                 $ch2 = curl_init();
                 curl_setopt($ch2, CURLOPT_URL, 'https://api.ocr.space/parse/image');
@@ -1585,10 +1452,37 @@ class PayslipProcessingService
         }
     }
 
-    private function performTesseractOCR(string $filePath): string
+    private function performTesseractOCR(string $filePath): array
     {
-        // Basic Tesseract implementation
-        return "Tesseract OCR text";
+        // This method is a placeholder. Tesseract logic is complex and should
+        // be handled carefully, potentially with image preprocessing.
+        // For now, it will fall back to OCR.space if needed via the caller.
+        Log::warning('Tesseract OCR method called but not fully implemented in PayslipProcessingService. Falling back.', [
+            'file_path' => $filePath
+        ]);
+
+        // To avoid breaking flows that might select Tesseract, we can either
+        // throw an exception or, more gracefully, try OCR.space as a backup.
+        return $this->performOCRSpace($filePath);
+    }
+
+    /**
+     * Helper to extract plain text from an OCR.space result array
+     */
+    private function getTextFromOcrResult(?array $ocrResult): string
+    {
+        if (!$ocrResult || !isset($ocrResult['ParsedResults'])) {
+            return '';
+        }
+
+        $extractedText = '';
+        foreach ($ocrResult['ParsedResults'] as $parsedResult) {
+            if (isset($parsedResult['ParsedText'])) {
+                $extractedText .= $parsedResult['ParsedText'] . "\n";
+            }
+        }
+
+        return trim($extractedText);
     }
 
     /**

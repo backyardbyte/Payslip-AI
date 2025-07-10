@@ -2,7 +2,7 @@
     <Head title="History" />
     
     <AppLayout>
-        <div class="flex flex-col h-full gap-6 p-4 sm:p-6">
+        <div class="flex flex-col gap-6 p-4 sm:p-6">
             <!-- Header -->
             <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                 <div>
@@ -12,7 +12,7 @@
                 <div class="flex gap-2">
                     <PermissionGuard permission="analytics.export">
                         <Button variant="outline" size="sm" @click="exportData" :disabled="isExporting">
-                            <Download :class="['h-4 w-4 mr-2', isExporting && 'animate-pulse']" />
+                            <Download class="h-4 w-4 mr-2" />
                             {{ isExporting ? 'Exporting...' : 'Export CSV' }}
                         </Button>
                     </PermissionGuard>
@@ -23,9 +23,9 @@
                 </div>
             </div>
 
-            <!-- Enhanced History Component -->
+            <!-- Clean History Component -->
             <PermissionGuard permission="payslip.view">
-                <EnhancedHistoryView />
+                <CleanHistoryView ref="historyView" />
             </PermissionGuard>
         </div>
     </AppLayout>
@@ -38,17 +38,15 @@ import { Button } from '@/components/ui/button';
 import { Download, RefreshCw } from 'lucide-vue-next';
 import { Head } from '@inertiajs/vue3';
 import PermissionGuard from '@/components/PermissionGuard.vue';
-import EnhancedHistoryView from '@/components/EnhancedHistoryView.vue';
+import CleanHistoryView from '@/components/CleanHistoryView.vue';
 
 const isExporting = ref(false);
 const isLoading = ref(false);
+const historyView = ref(null);
 
 const exportData = async () => {
     isExporting.value = true;
     try {
-        // Simulate export process
-        await new Promise(resolve => setTimeout(resolve, 2000));
-        
         // Get data from the API
         const response = await fetch('/api/payslips', {
             headers: {
@@ -59,26 +57,61 @@ const exportData = async () => {
         
         if (response.ok) {
             const data = await response.json();
-            const payslips = Array.isArray(data) ? data : (data.payslips || data.data || []);
+            // Handle the API response structure correctly
+            let payslipsData = []
+            if (data.payslips) {
+                payslipsData = data.payslips
+            } else if (data.data) {
+                payslipsData = data.data
+            } else if (Array.isArray(data)) {
+                payslipsData = data
+            }
             
-            // Create CSV content
+            // Create CSV content with more detailed information
             const csvContent = [
-                ['Name', 'Employee ID', 'Month', 'Gaji Bersih', 'Source', 'Status', 'Processed At'].join(','),
-                ...payslips.map((payslip: any) => [
-                    payslip.extracted_data?.nama || 'N/A',
-                    payslip.extracted_data?.no_gaji || 'N/A',
-                    payslip.extracted_data?.bulan || 'N/A',
-                    payslip.extracted_data?.gaji_bersih || 'N/A',
+                // Headers
+                [
+                    'Name',
+                    'Employee ID',
+                    'Month',
+                    'Basic Salary',
+                    'Total Earnings',
+                    'Total Deductions',
+                    'Net Salary',
+                    'Salary %',
+                    'Source',
+                    'Status',
+                    'Confidence Score',
+                    'Processing Time',
+                    'Koperasi Eligible',
+                    'Processed At'
+                ].join(','),
+                // Data rows
+                ...payslipsData.map((payslip: any) => [
+                    // Employee details
+                    `"${payslip.data?.nama || 'N/A'}"`,
+                    `"${payslip.data?.no_gaji || 'N/A'}"`,
+                    `"${payslip.data?.bulan || 'N/A'}"`,
+                    // Salary details
+                    payslip.data?.gaji_pokok || '0',
+                    payslip.data?.jumlah_pendapatan || '0',
+                    payslip.data?.jumlah_potongan || '0',
+                    payslip.data?.gaji_bersih || '0',
+                    payslip.data?.peratus_gaji_bersih || '0',
+                    // Processing details
                     payslip.source === 'telegram' ? 'Telegram' : 
                     payslip.source === 'whatsapp' ? 'WhatsApp' :
                     payslip.source === 'web' ? 'Web App' : 'Web App',
                     payslip.status,
-                    new Date(payslip.created_at).toLocaleDateString()
+                    payslip.quality_metrics?.confidence_score || '0',
+                    payslip.quality_metrics?.processing_time || '0',
+                    payslip.koperasi_summary ? `${payslip.koperasi_summary.eligible_count}/${payslip.koperasi_summary.total_checked}` : 'N/A',
+                    new Date(payslip.created_at).toLocaleString()
                 ].join(','))
             ].join('\n');
 
             // Download CSV
-            const blob = new Blob([csvContent], { type: 'text/csv' });
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
             const url = window.URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
@@ -94,10 +127,14 @@ const exportData = async () => {
 };
 
 const refreshData = () => {
-    // The EnhancedHistoryView component will handle its own refresh
     isLoading.value = true;
-    setTimeout(() => {
+    // Call the loadPayslips method on the CleanHistoryView component
+    if (historyView.value) {
+        (historyView.value as any).loadPayslips().finally(() => {
+            isLoading.value = false;
+        });
+    } else {
         isLoading.value = false;
-    }, 500);
+    }
 };
 </script> 
