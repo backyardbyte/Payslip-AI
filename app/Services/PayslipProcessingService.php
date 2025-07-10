@@ -148,20 +148,20 @@ class PayslipProcessingService
                 $text = $this->extractPdfText($filePath);
                 $method = 'pdftotext';
             } catch (\Exception $e) {
-                $ocrResult = $this->performOCRSpace($filePath);
-                $text = $this->getTextFromOcrResult($ocrResult);
+                $text = $this->performOCRSpace($filePath);
+                $ocrResult = null; // No array result since we now return text directly
                 $method = 'ocr_space_fallback';
             }
         } else {
             $ocrMethod = $this->settingsService->get('ocr.method', 'ocrspace');
             
             if ($ocrMethod === 'ocrspace') {
-                $ocrResult = $this->performOCRSpace($filePath);
-                $text = $this->getTextFromOcrResult($ocrResult);
+                $text = $this->performOCRSpace($filePath);
+                $ocrResult = null; // No array result since we now return text directly
                 $method = 'ocr_space';
             } else {
-                $ocrResult = $this->performTesseractOCR($filePath);
-                $text = $this->getTextFromOcrResult($ocrResult);
+                $text = $this->performTesseractOCR($filePath);
+                $ocrResult = null; // No array result since we now return text directly
                 $method = 'tesseract';
             }
         }
