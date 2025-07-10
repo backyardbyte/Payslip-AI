@@ -1292,7 +1292,7 @@ class PayslipProcessingService
         return (new Pdf($pdfToTextPath))->setPdf($filePath)->text();
     }
 
-    private function performOCRSpace(string $filePath): array
+    private function performOCRSpace(string $filePath): string
     {
         // Fix API key retrieval - check if settings value is empty and fallback to env
         $settingsApiKey = $this->settingsService->get('ocr.ocrspace_api_key');
@@ -1401,7 +1401,7 @@ class PayslipProcessingService
                 
                 // Try again with Engine 2
                 $postData['OCREngine'] = '2';
-                $postData['language'] = 'auto'; // Use language auto-detection for Engine 2
+                // Remove language parameter for Engine 2 as well
                 
                 $ch2 = curl_init();
                 curl_setopt($ch2, CURLOPT_URL, 'https://api.ocr.space/parse/image');
@@ -1452,7 +1452,7 @@ class PayslipProcessingService
         }
     }
 
-    private function performTesseractOCR(string $filePath): array
+    private function performTesseractOCR(string $filePath): string
     {
         // This method is a placeholder. Tesseract logic is complex and should
         // be handled carefully, potentially with image preprocessing.
