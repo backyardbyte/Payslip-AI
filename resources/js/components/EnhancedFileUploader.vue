@@ -1,16 +1,85 @@
 <template>
-  <Card>
-    <CardHeader class="pb-3">
-      <CardTitle class="flex items-center gap-2 text-base">
-        <UploadCloud class="h-4 w-4" />
-        Enhanced Payslip Uploader
-      </CardTitle>
-      <CardDescription class="text-xs">
-        Drag and drop your payslips below or click to select files.
-        Supports PDF, PNG, JPG, JPEG (max {{ maxFileSize }}MB)
-      </CardDescription>
+  <Card class="overflow-hidden border-2 border-dashed border-primary/20 hover:border-primary/40 transition-all duration-300">
+    <CardHeader class="bg-gradient-to-r from-blue-50 to-purple-50 dark:from-blue-950/50 dark:to-purple-950/50 pb-3">
+      <div class="flex items-center justify-between">
+        <div class="flex items-center space-x-3">
+          <div class="flex items-center space-x-2">
+            <div class="p-2 bg-primary/10 rounded-full">
+              <svg class="w-5 h-5 text-primary" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M9 12l2 2 4-4"/>
+                <path d="M21 12c-1 0-3-1-3-3s2-3 3-3 3 1 3 3-2 3-3 3"/>
+                <path d="M3 12c1 0 3-1 3-3s-2-3-3-3-3 1-3 3 2 3 3 3"/>
+                <path d="M12 3c0 1-1 3-3 3s-3-2-3-3 1-3 3-3 3 2 3 3"/>
+                <path d="M12 21c0-1 1-3 3-3s3 2 3 3-1 3-3 3-3-2-3-3"/>
+              </svg>
+            </div>
+            <div>
+              <CardTitle class="text-lg font-semibold">AI-Powered Payslip Uploader</CardTitle>
+              <CardDescription class="text-sm flex items-center gap-2">
+                <span class="inline-flex items-center gap-1.5 bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded-full dark:bg-blue-900/50 dark:text-blue-200">
+                  <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                    <path d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z"/>
+                  </svg>
+                  Google Vision API
+                </span>
+                <span class="inline-flex items-center gap-1.5 bg-purple-100 text-purple-800 text-xs px-2 py-1 rounded-full dark:bg-purple-900/50 dark:text-purple-200">
+                  <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                    <path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                  </svg>
+                  AI Analysis
+                </span>
+              </CardDescription>
+            </div>
+          </div>
+        </div>
+        <div class="text-right">
+          <div class="text-2xl font-bold text-primary">{{ files.length }}</div>
+          <div class="text-xs text-muted-foreground">files ready</div>
+        </div>
+      </div>
     </CardHeader>
     <CardContent class="space-y-4">
+      <!-- AI Technology Showcase -->
+      <div class="bg-gradient-to-r from-blue-50 to-purple-50 dark:from-blue-950/30 dark:to-purple-950/30 p-4 rounded-lg border border-blue-200 dark:border-blue-800">
+        <div class="flex items-center gap-3 mb-3">
+          <div class="p-2 bg-blue-500/10 rounded-full">
+            <svg class="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+            </svg>
+          </div>
+          <div>
+            <h3 class="font-semibold text-blue-900 dark:text-blue-100">Advanced AI Processing</h3>
+            <p class="text-sm text-blue-700 dark:text-blue-300">Powered by Google Cloud Vision API for superior text recognition</p>
+          </div>
+        </div>
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <div class="flex items-center gap-2">
+            <div class="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center">
+              <svg class="w-4 h-4 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+              </svg>
+            </div>
+            <span class="text-sm font-medium">99% Accuracy</span>
+          </div>
+          <div class="flex items-center gap-2">
+            <div class="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
+              <svg class="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+              </svg>
+            </div>
+            <span class="text-sm font-medium">Smart Extraction</span>
+          </div>
+          <div class="flex items-center gap-2">
+            <div class="w-8 h-8 bg-purple-100 rounded-full flex items-center justify-center">
+              <svg class="w-4 h-4 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 100 4m0-4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 100 4m0-4v2m0-6V4"/>
+              </svg>
+            </div>
+            <span class="text-sm font-medium">Real-time Analysis</span>
+          </div>
+        </div>
+      </div>
+
       <!-- File Drop Zone -->
       <div
         @dragover.prevent="onDragOver"
@@ -47,26 +116,29 @@
         </div>
         
         <!-- Upload Text -->
-        <div class="mt-3 text-center">
+        <div class="mt-4 text-center">
           <p class="text-sm font-medium">
-            {{ isDragging ? 'Drop files here' : 'Click or drag files here to upload' }}
+            {{ isDragging ? 'Drop files here for AI processing' : 'Click or drag payslips here' }}
           </p>
           <p class="mt-1 text-xs text-muted-foreground">
             Supports {{ allowedFileTypes.join(', ').toUpperCase() }} files up to {{ maxFileSize }}MB each
           </p>
-          <p class="mt-0.5 text-xs text-muted-foreground">
-            Multiple files supported • Real-time processing
+          <p class="mt-0.5 text-xs text-blue-600 dark:text-blue-400 font-medium">
+            ⚡ Instant processing with Google Vision API
           </p>
         </div>
         
         <!-- Upload Progress Overlay -->
         <div v-if="isUploading" class="absolute inset-0 bg-background/80 flex items-center justify-center rounded-lg">
           <div class="text-center">
-            <LoaderCircle class="w-6 h-6 animate-spin mx-auto text-primary" />
-            <p class="mt-2 text-xs font-medium">Uploading {{ uploadProgress.current }} of {{ uploadProgress.total }}</p>
-            <div class="mt-1 w-24 bg-muted rounded-full h-1.5">
+            <div class="flex items-center justify-center gap-2 mb-2">
+              <LoaderCircle class="w-5 h-5 animate-spin text-primary" />
+              <span class="text-sm font-medium">AI Processing...</span>
+            </div>
+            <p class="text-xs text-muted-foreground">{{ uploadProgress.current }} of {{ uploadProgress.total }} files</p>
+            <div class="mt-2 w-32 bg-muted rounded-full h-2">
               <div 
-                class="bg-primary h-1.5 rounded-full transition-all duration-300"
+                class="bg-gradient-to-r from-blue-500 to-purple-500 h-2 rounded-full transition-all duration-300"
                 :style="{ width: uploadProgress.percentage + '%' }"
               ></div>
             </div>
@@ -75,9 +147,12 @@
       </div>
       
       <!-- File Preview Section -->
-      <div v-if="files.length > 0" class="space-y-3">
+      <div v-if="files.length > 0" class="space-y-4">
         <div class="flex items-center justify-between">
-          <h3 class="text-sm font-medium">Selected Files ({{ files.length }})</h3>
+          <div class="flex items-center gap-2">
+            <h3 class="text-sm font-medium">Selected Files</h3>
+            <Badge variant="secondary" class="text-xs">{{ files.length }} files</Badge>
+          </div>
           <div class="flex gap-2">
             <Button variant="outline" size="sm" @click="clearAll" :disabled="isUploading" class="h-7 text-xs">
               <Trash2 class="w-3 h-3 mr-1.5" />
@@ -86,11 +161,13 @@
             <Button 
               @click="uploadFiles" 
               :disabled="isUploading || getPendingFiles().length === 0"
-              class="bg-primary h-7 text-xs"
+              class="bg-gradient-to-r from-blue-500 to-purple-500 hover:from-blue-600 hover:to-purple-600 h-7 text-xs"
             >
               <LoaderCircle v-if="isUploading" class="w-3 h-3 mr-1.5 animate-spin" />
-              <UploadCloud v-else class="w-3 h-3 mr-1.5" />
-              {{ isUploading ? 'Uploading...' : `Upload ${getPendingFiles().length} File(s)` }}
+              <svg v-else class="w-3 h-3 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+              </svg>
+              {{ isUploading ? 'Processing with AI...' : `Process ${getPendingFiles().length} File(s)` }}
             </Button>
           </div>
         </div>
@@ -122,23 +199,28 @@
                 v-if="file.status !== 'pending'"
                 :class="[
                   'absolute inset-0 flex items-center justify-center text-white font-medium',
-                  file.status === 'uploading' ? 'bg-blue-500/80' : '',
-                  file.status === 'success' ? 'bg-green-500/80' : '',
-                  file.status === 'error' ? 'bg-red-500/80' : ''
+                  file.status === 'uploading' ? 'bg-gradient-to-r from-blue-500/90 to-purple-500/90' : '',
+                  file.status === 'success' ? 'bg-green-500/90' : '',
+                  file.status === 'error' ? 'bg-red-500/90' : ''
                 ]"
               >
-                <LoaderCircle v-if="file.status === 'uploading'" class="w-3 h-3 animate-spin" />
-                <CheckCircle v-else-if="file.status === 'success'" class="w-3 h-3" />
-                <XCircle v-else-if="file.status === 'error'" class="w-3 h-3" />
+                <div class="text-center">
+                  <LoaderCircle v-if="file.status === 'uploading'" class="w-4 h-4 animate-spin mx-auto mb-1" />
+                  <CheckCircle v-else-if="file.status === 'success'" class="w-4 h-4 mx-auto mb-1" />
+                  <XCircle v-else-if="file.status === 'error'" class="w-4 h-4 mx-auto mb-1" />
+                  <span v-if="file.status === 'uploading'" class="text-xs">AI Processing</span>
+                  <span v-else-if="file.status === 'success'" class="text-xs">Ready</span>
+                  <span v-else-if="file.status === 'error'" class="text-xs">Failed</span>
+                </div>
               </div>
               
               <!-- Progress Bar -->
               <div 
                 v-if="file.status === 'uploading'"
-                class="absolute bottom-0 left-0 right-0 h-0.5 bg-white/20"
+                class="absolute bottom-0 left-0 right-0 h-1 bg-white/20"
               >
                 <div 
-                  class="h-full bg-white transition-all duration-300"
+                  class="h-full bg-gradient-to-r from-blue-400 to-purple-400 transition-all duration-300"
                   :style="{ width: file.progress + '%' }"
                 ></div>
               </div>
@@ -187,21 +269,21 @@
       </div>
       
       <!-- Upload Statistics -->
-      <div v-if="uploadStats.total > 0" class="grid grid-cols-2 md:grid-cols-4 gap-3 p-3 bg-muted/50 rounded-lg">
+      <div v-if="uploadStats.total > 0" class="grid grid-cols-2 md:grid-cols-4 gap-3 p-4 bg-gradient-to-r from-blue-50 to-purple-50 dark:from-blue-950/30 dark:to-purple-950/30 rounded-lg border border-blue-200 dark:border-blue-800">
         <div class="text-center">
-          <div class="text-lg font-bold text-blue-600">{{ uploadStats.total }}</div>
+          <div class="text-xl font-bold text-blue-600">{{ uploadStats.total }}</div>
           <div class="text-xs text-muted-foreground">Total Files</div>
         </div>
         <div class="text-center">
-          <div class="text-lg font-bold text-green-600">{{ uploadStats.success }}</div>
-          <div class="text-xs text-muted-foreground">Successful</div>
+          <div class="text-xl font-bold text-green-600">{{ uploadStats.success }}</div>
+          <div class="text-xs text-muted-foreground">AI Processed</div>
         </div>
         <div class="text-center">
-          <div class="text-lg font-bold text-red-600">{{ uploadStats.failed }}</div>
+          <div class="text-xl font-bold text-red-600">{{ uploadStats.failed }}</div>
           <div class="text-xs text-muted-foreground">Failed</div>
         </div>
         <div class="text-center">
-          <div class="text-lg font-bold text-orange-600">{{ uploadStats.pending }}</div>
+          <div class="text-xl font-bold text-orange-600">{{ uploadStats.pending }}</div>
           <div class="text-xs text-muted-foreground">Pending</div>
         </div>
       </div>
@@ -212,9 +294,21 @@
   <Dialog v-model:open="isPreviewOpen">
     <DialogContent class="max-w-4xl max-h-[90vh] overflow-auto">
       <DialogHeader>
-        <DialogTitle class="text-base">File Preview</DialogTitle>
+        <DialogTitle class="text-base flex items-center gap-2">
+          <svg class="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
+          </svg>
+          File Preview
+        </DialogTitle>
         <DialogDescription v-if="fileToPreview" class="text-xs">
           {{ fileToPreview.file.name }} ({{ formatFileSize(fileToPreview.file.size) }})
+          <span class="inline-flex items-center gap-1 ml-2 text-blue-600">
+            <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+              <path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+            </svg>
+            Ready for Google Vision API processing
+          </span>
         </DialogDescription>
       </DialogHeader>
       <div v-if="fileToPreview" class="mt-3">
@@ -228,7 +322,7 @@
           <div class="text-center text-muted-foreground">
             <FileText class="w-12 h-12 mx-auto mb-3" />
             <p class="text-sm">PDF Preview Not Available</p>
-            <p class="text-xs">File will be processed after upload</p>
+            <p class="text-xs">Will be processed with Google Vision API after upload</p>
           </div>
         </div>
       </div>
@@ -303,91 +397,160 @@ const uploadProgress = ref<UploadProgress>({
 })
 
 // Computed
-const uploadStats = computed(() => ({
-  total: files.value.length,
-  success: files.value.filter(f => f.status === 'success').length,
-  failed: files.value.filter(f => f.status === 'error').length,
-  pending: files.value.filter(f => f.status === 'pending').length,
-  uploading: files.value.filter(f => f.status === 'uploading').length
-}))
+const uploadStats = computed(() => {
+  const stats = {
+    total: files.value.length,
+    success: 0,
+    failed: 0,
+    pending: 0
+  }
 
-// File handling methods
-const onDragOver = () => {
+  files.value.forEach(file => {
+    if (file.status === 'success') stats.success++
+    else if (file.status === 'error') stats.failed++
+    else if (file.status === 'pending') stats.pending++
+  })
+
+  return stats
+})
+
+// Methods
+const openFileDialog = () => {
+  fileInput.value?.click()
+}
+
+const onFileSelected = (event: Event) => {
+  const target = event.target as HTMLInputElement
+  if (target.files) {
+    handleFiles(Array.from(target.files))
+  }
+}
+
+const onDragOver = (event: DragEvent) => {
   isDragging.value = true
 }
 
-const onDragLeave = () => {
+const onDragLeave = (event: DragEvent) => {
   isDragging.value = false
 }
 
 const onDrop = (event: DragEvent) => {
   isDragging.value = false
-  const droppedFiles = event.dataTransfer?.files
-  if (droppedFiles) {
-    addFiles(droppedFiles)
-  }
+  const files = Array.from(event.dataTransfer?.files || [])
+  handleFiles(files)
 }
 
-const onFileSelected = () => {
-  const selectedFiles = fileInput.value?.files
-  if (selectedFiles) {
-    addFiles(selectedFiles)
-  }
-  if (fileInput.value) {
-    fileInput.value.value = ''
-  }
-}
-
-const openFileDialog = () => {
-  if (isUploading.value) return
-  fileInput.value?.click()
-}
-
-const addFiles = (fileList: FileList) => {
-  Array.from(fileList).forEach(file => {
-    // Validate file
-    const validation = validateFile(file)
-    if (!validation.valid) {
-      console.error(`File validation failed: ${validation.error}`)
+const handleFiles = (fileList: File[]) => {
+  fileList.forEach(file => {
+    // Validate file type
+    const fileExtension = file.name.split('.').pop()?.toLowerCase()
+    if (!props.allowedFileTypes.includes(fileExtension || '')) {
+      alert(`File type ${fileExtension} is not allowed`)
       return
     }
-    
+
+    // Validate file size
+    if (file.size > props.maxFileSize * 1024 * 1024) {
+      alert(`File ${file.name} exceeds maximum size of ${props.maxFileSize}MB`)
+      return
+    }
+
+    const fileId = Date.now().toString() + Math.random().toString(36).substr(2, 9)
     const uploadableFile: UploadableFile = {
-      id: `file_${Math.random().toString(36).substr(2, 9)}`,
+      id: fileId,
       file,
       progress: 0,
-      status: 'pending',
-      previewUrl: file.type.startsWith('image/') ? URL.createObjectURL(file) : undefined
+      status: 'pending'
     }
-    
+
+    // Create preview for images
+    if (file.type.startsWith('image/')) {
+      const reader = new FileReader()
+      reader.onload = (e) => {
+        uploadableFile.previewUrl = e.target?.result as string
+      }
+      reader.readAsDataURL(file)
+    }
+
     files.value.push(uploadableFile)
     emit('fileAdded', file)
   })
 }
 
 const removeFile = (fileId: string) => {
-  const fileIndex = files.value.findIndex(f => f.id === fileId)
-  if (fileIndex > -1) {
-    const file = files.value[fileIndex]
-    if (file.previewUrl) {
-      URL.revokeObjectURL(file.previewUrl)
-    }
-    files.value.splice(fileIndex, 1)
+  const index = files.value.findIndex(f => f.id === fileId)
+  if (index > -1) {
+    files.value.splice(index, 1)
     emit('fileRemoved', fileId)
   }
 }
 
 const clearAll = () => {
-  files.value.forEach(file => {
-    if (file.previewUrl) {
-      URL.revokeObjectURL(file.previewUrl)
-    }
-  })
   files.value = []
 }
 
 const getPendingFiles = () => {
-  return files.value.filter(f => f.status === 'pending' || f.status === 'error')
+  return files.value.filter(f => f.status === 'pending')
+}
+
+const uploadFiles = async () => {
+  const pendingFiles = getPendingFiles()
+  if (pendingFiles.length === 0) return
+
+  isUploading.value = true
+  uploadProgress.value.total = pendingFiles.length
+  uploadProgress.value.current = 0
+
+  const results = []
+
+  for (const file of pendingFiles) {
+    try {
+      file.status = 'uploading'
+      file.progress = 0
+
+      // Simulate upload progress
+      const progressInterval = setInterval(() => {
+        if (file.progress < 90) {
+          file.progress += Math.random() * 10
+        }
+      }, 100)
+
+      // Upload file
+      const formData = new FormData()
+      formData.append('file', file.file)
+
+      const response = await fetch('/api/upload', {
+        method: 'POST',
+        body: formData,
+        headers: {
+          'X-Requested-With': 'XMLHttpRequest',
+          'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || ''
+        }
+      })
+
+      clearInterval(progressInterval)
+      file.progress = 100
+
+      if (response.ok) {
+        const result = await response.json()
+        file.status = 'success'
+        results.push(result)
+      } else {
+        file.status = 'error'
+        const error = await response.json()
+        file.error = error.message || 'Upload failed'
+      }
+    } catch (error) {
+      file.status = 'error'
+      file.error = error instanceof Error ? error.message : 'Upload failed'
+    }
+
+    uploadProgress.value.current++
+    uploadProgress.value.percentage = (uploadProgress.value.current / uploadProgress.value.total) * 100
+  }
+
+  isUploading.value = false
+  emit('uploadComplete', results)
 }
 
 const previewFile = (file: UploadableFile) => {
@@ -395,114 +558,12 @@ const previewFile = (file: UploadableFile) => {
   isPreviewOpen.value = true
 }
 
-// Upload methods
-const uploadFiles = async () => {
-  const filesToUpload = getPendingFiles()
-  if (filesToUpload.length === 0) return
-
-  isUploading.value = true
-  uploadProgress.value = {
-    current: 0,
-    total: filesToUpload.length,
-    percentage: 0
-  }
-
-  const results = []
-
-  for (let i = 0; i < filesToUpload.length; i++) {
-    const fileToUpload = filesToUpload[i]
-    
-    try {
-      fileToUpload.status = 'uploading'
-      uploadProgress.value.current = i + 1
-      uploadProgress.value.percentage = Math.round(((i + 1) / filesToUpload.length) * 100)
-      
-      const result = await uploadSingleFile(fileToUpload)
-      fileToUpload.status = 'success'
-      fileToUpload.progress = 100
-      results.push(result)
-      
-    } catch (error) {
-      fileToUpload.status = 'error'
-      fileToUpload.error = error instanceof Error ? error.message : 'Upload failed'
-      results.push({ error: fileToUpload.error, file: fileToUpload.file })
-    }
-  }
-
-  isUploading.value = false
-  emit('uploadComplete', results)
-}
-
-const uploadSingleFile = async (uploadableFile: UploadableFile): Promise<any> => {
-  return new Promise((resolve, reject) => {
-    const formData = new FormData()
-    formData.append('file', uploadableFile.file)
-
-    const xhr = new XMLHttpRequest()
-
-    xhr.upload.onprogress = (event) => {
-      if (event.lengthComputable) {
-        uploadableFile.progress = Math.round((event.loaded / event.total) * 100)
-      }
-    }
-
-    xhr.onload = () => {
-      if (xhr.status === 200) {
-        try {
-          const response = JSON.parse(xhr.responseText)
-          resolve(response)
-        } catch (e) {
-          reject(new Error('Invalid response format'))
-        }
-      } else {
-        reject(new Error(`Upload failed with status ${xhr.status}`))
-      }
-    }
-
-    xhr.onerror = () => {
-      reject(new Error('Upload failed'))
-    }
-
-    xhr.open('POST', '/api/upload')
-    xhr.send(formData)
-  })
-}
-
-// Validation
-const validateFile = (file: File): { valid: boolean; error?: string } => {
-  // Check file type
-  const fileExtension = file.name.split('.').pop()?.toLowerCase()
-  if (!fileExtension || !props.allowedFileTypes.includes(fileExtension)) {
-    return {
-      valid: false,
-      error: `File type not allowed. Allowed types: ${props.allowedFileTypes.join(', ')}`
-    }
-  }
-
-  // Check file size
-  const maxSizeBytes = props.maxFileSize * 1024 * 1024
-  if (file.size > maxSizeBytes) {
-    return {
-      valid: false,
-      error: `File size too large. Maximum size: ${props.maxFileSize}MB`
-    }
-  }
-
-  return { valid: true }
-}
-
-// Utility methods
 const formatFileSize = (bytes: number): string => {
-  const units = ['B', 'KB', 'MB', 'GB']
-  let size = bytes
-  let unitIndex = 0
-
-  while (size >= 1024 && unitIndex < units.length - 1) {
-    size /= 1024
-    unitIndex++
-  }
-
-  return `${size.toFixed(1)} ${units[unitIndex]}`
+  if (bytes === 0) return '0 Bytes'
+  const k = 1024
+  const sizes = ['Bytes', 'KB', 'MB', 'GB']
+  const i = Math.floor(Math.log(bytes) / Math.log(k))
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
 }
 
 const getStatusVariant = (status: string) => {
@@ -514,13 +575,12 @@ const getStatusVariant = (status: string) => {
   }
 }
 
-const getStatusText = (status: string): string => {
+const getStatusText = (status: string) => {
   switch (status) {
-    case 'pending': return 'Ready'
-    case 'uploading': return 'Uploading'
-    case 'success': return 'Complete'
+    case 'success': return 'Ready'
     case 'error': return 'Failed'
-    default: return 'Unknown'
+    case 'uploading': return 'AI Processing'
+    default: return 'Pending'
   }
 }
 

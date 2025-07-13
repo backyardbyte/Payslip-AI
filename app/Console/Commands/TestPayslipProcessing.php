@@ -11,7 +11,7 @@ use Spatie\PdfToText\Pdf;
 
 class TestPayslipProcessing extends Command
 {
-    protected $signature = 'payslip:test-processing {file? : Path to payslip file} {--payslip-id= : Test with existing payslip ID} {--show-text : Show extracted OCR text} {--verbose : Show detailed error information}';
+    protected $signature = 'payslip:test-processing {file? : Path to payslip file} {--payslip-id= : Test with existing payslip ID} {--show-text : Show extracted OCR text} {--debug : Show detailed error information}';
     protected $description = 'Test payslip processing with enhanced debugging for Malaysian government payslips';
 
     public function handle()
@@ -75,7 +75,7 @@ class TestPayslipProcessing extends Command
             
         } catch (\Exception $e) {
             $this->error('Processing failed: ' . $e->getMessage());
-            if ($this->option('verbose')) {
+            if ($this->option('debug')) {
                 $this->error('Stack trace: ' . $e->getTraceAsString());
             }
             return 1;
@@ -87,7 +87,17 @@ class TestPayslipProcessing extends Command
         try {
             // Test OCR extraction
             $this->info('Step 1: Testing OCR Text Extraction...');
-            $text = $this->performOCRSpace($file);
+            
+            // Try Google Vision API first, then fall back to OCR.space
+            $ocrMethod = env('OCR_METHOD', 'google_vision');
+            $this->info("Using OCR method: {$ocrMethod}");
+            
+            if ($ocrMethod === 'google_vision') {
+                $text = $this->performGoogleVisionOCR($file);
+            } else {
+                $text = $this->performOCRSpace($file);
+            }
+            
             $this->info("✓ OCR extraction completed. Text length: " . strlen($text) . " characters");
             
             if ($this->option('show-text')) {
@@ -176,7 +186,7 @@ class TestPayslipProcessing extends Command
 
         } catch (\Exception $e) {
             $this->error('Processing failed: ' . $e->getMessage());
-            if ($this->option('verbose')) {
+            if ($this->option('debug')) {
                 $this->error('Stack trace: ' . $e->getTraceAsString());
             }
             return 1;
@@ -380,6 +390,167 @@ class TestPayslipProcessing extends Command
             
         } catch (\Exception $e) {
             throw new \Exception('OCR.space processing failed: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Perform OCR using Google Vision API
+     */
+    private function performGoogleVisionOCR(string $filePath): string
+    {
+        // Get API key from environment
+        $apiKey = env('GOOGLE_VISION_API_KEY');
+        
+        if (!$apiKey) {
+            throw new \Exception('Google Vision API key not configured. Please set GOOGLE_VISION_API_KEY in your .env file');
+        }
+        
+        try {
+            // Determine file type and prepare image data
+            $mimeType = mime_content_type($filePath);
+            $base64 = '';
+            
+            if ($mimeType === 'application/pdf') {
+                // For PDFs, we need to convert to image first
+                $this->info("Converting PDF to image for Google Vision API...");
+                $base64 = $this->convertPdfToImageBase64($filePath);
+            } else {
+                // For images, read directly
+                $fileData = file_get_contents($filePath);
+                $base64 = base64_encode($fileData);
+            }
+            
+            // Prepare Google Vision API request optimized for document text detection
+            $postData = [
+                'requests' => [
+                    [
+                        'image' => [
+                            'content' => $base64
+                        ],
+                        'features' => [
+                            [
+                                'type' => 'DOCUMENT_TEXT_DETECTION',
+                                'maxResults' => 1
+                            ]
+                        ],
+                        'imageContext' => [
+                            'languageHints' => ['en', 'ms'] // English and Malay for Malaysian payslips
+                        ]
+                    ]
+                ]
+            ];
+            
+            // Make API request to Google Vision
+            $ch = curl_init();
+            curl_setopt($ch, CURLOPT_URL, 'https://vision.googleapis.com/v1/images:annotate?key=' . $apiKey);
+            curl_setopt($ch, CURLOPT_POST, true);
+            curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($postData));
+            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+            curl_setopt($ch, CURLOPT_HTTPHEADER, [
+                'Content-Type: application/json',
+            ]);
+            curl_setopt($ch, CURLOPT_TIMEOUT, 120);
+            curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 30);
+            curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
+            curl_setopt($ch, CURLOPT_USERAGENT, 'Payslip-AI/1.0');
+            curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
+            
+            $response = curl_exec($ch);
+            $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            $curlError = curl_error($ch);
+            curl_close($ch);
+            
+            if ($curlError) {
+                throw new \Exception('Google Vision API request failed: ' . $curlError);
+            }
+            
+            if ($httpCode !== 200) {
+                throw new \Exception('Google Vision API returned HTTP ' . $httpCode . '. Response: ' . substr($response, 0, 500));
+            }
+            
+            $result = json_decode($response, true);
+            
+            if (!$result) {
+                throw new \Exception('Invalid Google Vision API response: Failed to decode JSON');
+            }
+            
+            // Check for API errors
+            if (isset($result['error'])) {
+                $errorMsg = $result['error']['message'] ?? 'Unknown Google Vision API error';
+                throw new \Exception('Google Vision API error: ' . $errorMsg);
+            }
+            
+            // Extract text from response
+            $extractedText = '';
+            if (isset($result['responses'][0]['fullTextAnnotation']['text'])) {
+                $extractedText = $result['responses'][0]['fullTextAnnotation']['text'];
+                $this->info("✓ Used fullTextAnnotation for text extraction");
+            } elseif (isset($result['responses'][0]['textAnnotations'][0]['description'])) {
+                $extractedText = $result['responses'][0]['textAnnotations'][0]['description'];
+                $this->info("✓ Used textAnnotations for text extraction");
+            } else {
+                // Check if there's an error in the response
+                if (isset($result['responses'][0]['error'])) {
+                    $errorMsg = $result['responses'][0]['error']['message'] ?? 'Unknown error';
+                    throw new \Exception('Google Vision API processing error: ' . $errorMsg);
+                }
+                
+                throw new \Exception('Google Vision API returned no text data');
+            }
+            
+            return trim($extractedText);
+            
+        } catch (\Exception $e) {
+            throw new \Exception('Google Vision processing failed: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Convert PDF to image base64 for Google Vision API
+     */
+    private function convertPdfToImageBase64(string $pdfPath): string
+    {
+        try {
+            // Try using Imagick if available
+            if (extension_loaded('imagick')) {
+                $this->info("Using ImageMagick for PDF conversion...");
+                $imagick = new \Imagick();
+                $imagick->setResolution(300, 300); // High resolution for better OCR
+                $imagick->readImage($pdfPath . '[0]'); // Read first page only
+                $imagick->setImageFormat('png');
+                $imagick->setImageCompressionQuality(100);
+                
+                // Get image blob and encode to base64
+                $imageBlob = $imagick->getImageBlob();
+                $imagick->clear();
+                $imagick->destroy();
+                
+                return base64_encode($imageBlob);
+            }
+            
+            // Fallback: Try using ghostscript via exec
+            $this->info("Using GhostScript for PDF conversion...");
+            $tempImagePath = sys_get_temp_dir() . '/payslip_' . uniqid() . '.png';
+            
+            // Use gs (ghostscript) to convert PDF to image
+            $gsCommand = sprintf(
+                'gs -dNOPAUSE -dBATCH -sDEVICE=png16m -r300 -dFirstPage=1 -dLastPage=1 -sOutputFile=%s %s 2>/dev/null',
+                escapeshellarg($tempImagePath),
+                escapeshellarg($pdfPath)
+            );
+            
+            exec($gsCommand, $output, $returnCode);
+            
+            if ($returnCode === 0 && file_exists($tempImagePath)) {
+                $imageData = file_get_contents($tempImagePath);
+                unlink($tempImagePath); // Clean up temp file
+                return base64_encode($imageData);
+            }
+            
+            throw new \Exception('PDF to image conversion failed. Please install ImageMagick or GhostScript for PDF support with Google Vision API.');
+            
+        } catch (\Exception $e) {
+            throw new \Exception('PDF conversion failed: ' . $e->getMessage() . '. For PDF support with Google Vision API, please install ImageMagick or GhostScript.');
         }
     }
 } 
