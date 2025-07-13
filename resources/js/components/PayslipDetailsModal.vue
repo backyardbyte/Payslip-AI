@@ -79,9 +79,9 @@
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/>
                   </svg>
                 </div>
-                AI Extracted Employee Data
+                Employee Information
               </CardTitle>
-              <CardDescription>Information extracted by Google Vision API</CardDescription>
+              <CardDescription>Personal and employment details extracted by AI</CardDescription>
             </CardHeader>
             <CardContent class="space-y-4">
               <div class="space-y-3">
@@ -93,48 +93,170 @@
                   <span class="text-sm font-medium text-muted-foreground">Employee ID</span>
                   <span class="text-sm font-mono">{{ payslip.data?.no_gaji || 'Not extracted' }}</span>
                 </div>
+                <div class="flex items-center justify-between py-3 border-b border-muted" v-if="payslip.data?.ic_number">
+                  <span class="text-sm font-medium text-muted-foreground">IC Number</span>
+                  <span class="text-sm font-mono">{{ payslip.data.ic_number }}</span>
+                </div>
                 <div class="flex items-center justify-between py-3 border-b border-muted">
                   <span class="text-sm font-medium text-muted-foreground">Pay Period</span>
                   <span class="text-sm font-mono">{{ payslip.data?.bulan || 'Not extracted' }}</span>
                 </div>
-                <div class="flex items-center justify-between py-3">
+                <div class="flex items-center justify-between py-3 border-b border-muted" v-if="payslip.data?.position">
+                  <span class="text-sm font-medium text-muted-foreground">Position</span>
+                  <span class="text-sm">{{ payslip.data.position }}</span>
+                </div>
+                <div class="flex items-center justify-between py-3" v-if="payslip.data?.peratus_gaji_bersih">
                   <span class="text-sm font-medium text-muted-foreground">Salary Percentage</span>
-                  <span class="text-sm font-bold text-blue-600">{{ payslip.data?.peratus_gaji_bersih ? payslip.data.peratus_gaji_bersih + '%' : 'Not calculated' }}</span>
+                  <span class="text-sm font-bold text-blue-600">{{ payslip.data.peratus_gaji_bersih }}%</span>
                 </div>
               </div>
             </CardContent>
           </Card>
 
-          <!-- Salary Breakdown -->
+          <!-- Department & Bank Information -->
           <Card>
+            <CardHeader>
+              <CardTitle class="text-lg flex items-center gap-2">
+                <div class="p-2 bg-purple-500/10 rounded-lg">
+                  <svg class="w-5 h-5 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"/>
+                  </svg>
+                </div>
+                Department & Banking Details
+              </CardTitle>
+              <CardDescription>Organizational and financial account information</CardDescription>
+            </CardHeader>
+            <CardContent class="space-y-4">
+              <div class="space-y-3">
+                <div class="flex items-center justify-between py-3 border-b border-muted" v-if="payslip.data?.department">
+                  <span class="text-sm font-medium text-muted-foreground">Department</span>
+                  <span class="text-sm font-semibold">{{ payslip.data.department }}</span>
+                </div>
+                <div class="flex items-center justify-between py-3 border-b border-muted" v-if="payslip.data?.department_code">
+                  <span class="text-sm font-medium text-muted-foreground">Department Code</span>
+                  <span class="text-sm font-mono">{{ payslip.data.department_code }}</span>
+                </div>
+                <div class="flex items-center justify-between py-3 border-b border-muted" v-if="payslip.data?.kump_ptj">
+                  <span class="text-sm font-medium text-muted-foreground">Kump PTJ/PTJ</span>
+                  <span class="text-sm font-mono">{{ payslip.data.kump_ptj }}</span>
+                </div>
+                <div class="flex items-center justify-between py-3 border-b border-muted" v-if="payslip.data?.pusat_pembayar">
+                  <span class="text-sm font-medium text-muted-foreground">Pusat Pembayar</span>
+                  <span class="text-sm">{{ payslip.data.pusat_pembayar }}</span>
+                </div>
+                <div class="flex items-center justify-between py-3 border-b border-muted" v-if="payslip.data?.cukai_kwsp">
+                  <span class="text-sm font-medium text-muted-foreground">No Cukai/KWSP</span>
+                  <span class="text-sm font-mono">{{ payslip.data.cukai_kwsp }}</span>
+                </div>
+                <div class="flex items-center justify-between py-3 border-b border-muted" v-if="payslip.data?.bank_name">
+                  <span class="text-sm font-medium text-muted-foreground">Bank</span>
+                  <span class="text-sm font-mono">{{ payslip.data.bank_name }}</span>
+                </div>
+                <div class="flex items-center justify-between py-3" v-if="payslip.data?.bank_account">
+                  <span class="text-sm font-medium text-muted-foreground">Account Number</span>
+                  <span class="text-sm font-mono">{{ payslip.data.bank_account }}</span>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        <!-- Salary Breakdown Summary -->
+        <Card>
+          <CardHeader>
+            <CardTitle class="text-lg flex items-center gap-2">
+              <div class="p-2 bg-green-500/10 rounded-lg">
+                <svg class="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1"/>
+                </svg>
+              </div>
+              Salary Summary
+            </CardTitle>
+            <CardDescription>Financial breakdown detected by AI</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+              <div class="text-center p-4 bg-blue-50 dark:bg-blue-950/20 rounded-lg">
+                <div class="text-2xl font-bold text-blue-600">{{ formatCurrency(payslip.data?.gaji_pokok) }}</div>
+                <div class="text-sm text-blue-800 dark:text-blue-200 font-medium">Basic Salary</div>
+                <div class="text-xs text-blue-600 dark:text-blue-400 mt-1">Gaji Pokok</div>
+              </div>
+              <div class="text-center p-4 bg-green-50 dark:bg-green-950/20 rounded-lg">
+                <div class="text-2xl font-bold text-green-600">{{ formatCurrency(payslip.data?.jumlah_pendapatan) }}</div>
+                <div class="text-sm text-green-800 dark:text-green-200 font-medium">Total Earnings</div>
+                <div class="text-xs text-green-600 dark:text-green-400 mt-1">Jumlah Pendapatan</div>
+              </div>
+              <div class="text-center p-4 bg-red-50 dark:bg-red-950/20 rounded-lg">
+                <div class="text-2xl font-bold text-red-600">{{ formatCurrency(payslip.data?.jumlah_potongan) }}</div>
+                <div class="text-sm text-red-800 dark:text-red-200 font-medium">Total Deductions</div>
+                <div class="text-xs text-red-600 dark:text-red-400 mt-1">Jumlah Potongan</div>
+              </div>
+              <div class="text-center p-4 bg-emerald-50 dark:bg-emerald-950/20 rounded-lg border-2 border-emerald-200 dark:border-emerald-800">
+                <div class="text-2xl font-bold text-emerald-700 dark:text-emerald-300">{{ formatCurrency(payslip.data?.gaji_bersih) }}</div>
+                <div class="text-sm text-emerald-800 dark:text-emerald-200 font-medium">Net Salary</div>
+                <div class="text-xs text-emerald-600 dark:text-emerald-400 mt-1">Gaji Bersih</div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <!-- Detailed Earnings and Deductions -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6" v-if="payslip.data?.individual_earnings || payslip.data?.individual_deductions">
+          <!-- Individual Earnings -->
+          <Card v-if="payslip.data?.individual_earnings && payslip.data.individual_earnings.length > 0">
             <CardHeader>
               <CardTitle class="text-lg flex items-center gap-2">
                 <div class="p-2 bg-green-500/10 rounded-lg">
                   <svg class="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1"/>
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/>
                   </svg>
                 </div>
-                AI Extracted Salary Data
+                Detailed Earnings (Pendapatan)
               </CardTitle>
-              <CardDescription>Financial information detected by AI</CardDescription>
+              <CardDescription>Individual earning components</CardDescription>
             </CardHeader>
-            <CardContent class="space-y-4">
-              <div class="space-y-3">
-                <div class="flex items-center justify-between py-3 border-b border-muted">
-                  <span class="text-sm font-medium text-muted-foreground">Basic Salary</span>
-                  <span class="text-sm font-semibold">{{ formatCurrency(payslip.data?.gaji_pokok) }}</span>
+            <CardContent class="space-y-3">
+              <div 
+                v-for="earning in payslip.data.individual_earnings" 
+                :key="earning.code"
+                class="flex items-center justify-between py-2 px-3 bg-green-50 dark:bg-green-950/20 rounded-lg"
+              >
+                <div class="flex-1">
+                  <div class="text-sm font-medium text-green-900 dark:text-green-100">{{ earning.description }}</div>
+                  <div class="text-xs text-green-700 dark:text-green-300">Code: {{ earning.code }}</div>
                 </div>
-                <div class="flex items-center justify-between py-3 border-b border-muted">
-                  <span class="text-sm font-medium text-muted-foreground">Total Earnings</span>
-                  <span class="text-sm font-semibold text-green-600">{{ formatCurrency(payslip.data?.jumlah_pendapatan) }}</span>
+                <div class="text-sm font-semibold text-green-700 dark:text-green-300">
+                  {{ formatCurrency(earning.amount) }}
                 </div>
-                <div class="flex items-center justify-between py-3 border-b border-muted">
-                  <span class="text-sm font-medium text-muted-foreground">Total Deductions</span>
-                  <span class="text-sm font-semibold text-red-600">{{ formatCurrency(payslip.data?.jumlah_potongan) }}</span>
+              </div>
+            </CardContent>
+          </Card>
+
+          <!-- Individual Deductions -->
+          <Card v-if="payslip.data?.individual_deductions && payslip.data.individual_deductions.length > 0">
+            <CardHeader>
+              <CardTitle class="text-lg flex items-center gap-2">
+                <div class="p-2 bg-red-500/10 rounded-lg">
+                  <svg class="w-5 h-5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 12H4"/>
+                  </svg>
                 </div>
-                <div class="flex items-center justify-between py-3 bg-green-50 dark:bg-green-950/20 rounded-lg px-4">
-                  <span class="text-sm font-bold text-green-900 dark:text-green-100">Net Salary</span>
-                  <span class="text-lg font-bold text-green-700 dark:text-green-300">{{ formatCurrency(payslip.data?.gaji_bersih) }}</span>
+                Detailed Deductions (Potongan)
+              </CardTitle>
+              <CardDescription>Individual deduction components</CardDescription>
+            </CardHeader>
+            <CardContent class="space-y-3">
+              <div 
+                v-for="deduction in payslip.data.individual_deductions" 
+                :key="deduction.code"
+                class="flex items-center justify-between py-2 px-3 bg-red-50 dark:bg-red-950/20 rounded-lg"
+              >
+                <div class="flex-1">
+                  <div class="text-sm font-medium text-red-900 dark:text-red-100">{{ deduction.description }}</div>
+                  <div class="text-xs text-red-700 dark:text-red-300">Code: {{ deduction.code }}</div>
+                </div>
+                <div class="text-sm font-semibold text-red-700 dark:text-red-300">
+                  {{ formatCurrency(deduction.amount) }}
                 </div>
               </div>
             </CardContent>
@@ -201,18 +323,24 @@
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
                 </svg>
               </div>
-              Processing Metadata
+              Processing Metadata & Quality Metrics
             </CardTitle>
             <CardDescription>Technical details about the Google Vision API processing</CardDescription>
           </CardHeader>
           <CardContent>
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              <!-- Processing Summary -->
               <div class="space-y-3">
-                <h4 class="font-semibold text-sm">Processing Information</h4>
+                <h4 class="font-semibold text-sm flex items-center gap-2">
+                  <svg class="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
+                  </svg>
+                  Processing Information
+                </h4>
                 <div class="space-y-2 text-sm">
                   <div class="flex justify-between">
                     <span class="text-muted-foreground">Processing Method</span>
-                    <span class="font-medium">Google Vision API</span>
+                    <span class="font-medium">PDF.co + Google Vision</span>
                   </div>
                   <div class="flex justify-between">
                     <span class="text-muted-foreground">Status</span>
@@ -228,11 +356,61 @@
                     <span class="text-muted-foreground">File Size</span>
                     <span class="font-medium">{{ formatFileSize(payslip.size) }}</span>
                   </div>
+                  <div class="flex justify-between">
+                    <span class="text-muted-foreground">Text Extracted</span>
+                    <span class="font-medium">{{ payslip.data?.debug_info?.text_length || 0 }} characters</span>
+                  </div>
                 </div>
               </div>
               
+              <!-- Quality Metrics -->
               <div class="space-y-3">
-                <h4 class="font-semibold text-sm">Timestamps</h4>
+                <h4 class="font-semibold text-sm flex items-center gap-2">
+                  <svg class="w-4 h-4 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                  </svg>
+                  Quality Metrics
+                </h4>
+                <div class="space-y-3">
+                  <div class="space-y-1">
+                    <div class="flex justify-between text-sm">
+                      <span class="text-muted-foreground">AI Confidence</span>
+                      <span class="font-medium">{{ Math.round(payslip.quality_metrics?.confidence_score || 0) }}%</span>
+                    </div>
+                    <div class="w-full bg-gray-200 rounded-full h-2">
+                      <div 
+                        class="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                        :style="{ width: `${Math.round(payslip.quality_metrics?.confidence_score || 0)}%` }"
+                      ></div>
+                    </div>
+                  </div>
+                  <div class="space-y-1">
+                    <div class="flex justify-between text-sm">
+                      <span class="text-muted-foreground">Data Completeness</span>
+                      <span class="font-medium">{{ Math.round(payslip.quality_metrics?.data_completeness || 0) }}%</span>
+                    </div>
+                    <div class="w-full bg-gray-200 rounded-full h-2">
+                      <div 
+                        class="bg-green-600 h-2 rounded-full transition-all duration-300"
+                        :style="{ width: `${Math.round(payslip.quality_metrics?.data_completeness || 0)}%` }"
+                      ></div>
+                    </div>
+                  </div>
+                  <div class="flex justify-between text-sm">
+                    <span class="text-muted-foreground">Processing Time</span>
+                    <span class="font-medium">{{ formatProcessingTime(payslip.quality_metrics?.processing_time) }}</span>
+                  </div>
+                </div>
+              </div>
+              
+              <!-- Timestamps -->
+              <div class="space-y-3">
+                <h4 class="font-semibold text-sm flex items-center gap-2">
+                  <svg class="w-4 h-4 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                  </svg>
+                  Timeline
+                </h4>
                 <div class="space-y-2 text-sm">
                   <div class="flex justify-between">
                     <span class="text-muted-foreground">Uploaded</span>
@@ -243,7 +421,7 @@
                     <span class="font-medium">{{ formatDate(payslip.processing_completed_at) }}</span>
                   </div>
                   <div class="flex justify-between">
-                    <span class="text-muted-foreground">Processing Duration</span>
+                    <span class="text-muted-foreground">Total Duration</span>
                     <span class="font-medium">{{ formatProcessingTime(payslip.quality_metrics?.processing_time) }}</span>
                   </div>
                 </div>
@@ -252,8 +430,8 @@
           </CardContent>
         </Card>
 
-        <!-- AI Debug Information -->
-        <Card v-if="payslip.data?.debug_info">
+        <!-- AI Extraction Patterns (Debug Information) -->
+        <Card v-if="payslip.data?.debug_info?.extraction_patterns_found && payslip.data.debug_info.extraction_patterns_found.length > 0">
           <CardHeader>
             <CardTitle class="text-lg flex items-center gap-2">
               <div class="p-2 bg-gray-500/10 rounded-lg">
@@ -261,53 +439,49 @@
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"/>
                 </svg>
               </div>
-              Google Vision API Debug Information
+              AI Extraction Patterns & Confidence Scores
             </CardTitle>
-            <CardDescription>Technical details about the AI text extraction process</CardDescription>
+            <CardDescription>Technical details about how the AI extracted each field</CardDescription>
           </CardHeader>
           <CardContent class="space-y-4">
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div v-if="payslip.data.debug_info.text_length" class="space-y-2">
-                <h4 class="font-semibold text-sm">OCR Text Analysis</h4>
-                <div class="text-sm">
-                  <div class="flex justify-between py-2 border-b border-muted">
-                    <span class="text-muted-foreground">Text Length</span>
-                    <span class="font-mono">{{ payslip.data.debug_info.text_length }} characters</span>
-                  </div>
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <!-- Extraction Patterns -->
+              <div v-if="payslip.data.debug_info.extraction_patterns_found" class="space-y-2">
+                <h4 class="font-semibold text-sm">Extraction Patterns Found</h4>
+                <div class="bg-muted/50 rounded-lg p-3 max-h-48 overflow-y-auto">
+                  <ul class="space-y-1 text-sm text-muted-foreground">
+                    <li v-for="pattern in payslip.data.debug_info.extraction_patterns_found" :key="pattern" class="flex items-start gap-2">
+                      <svg class="w-3 h-3 text-green-600 mt-1 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                        <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/>
+                      </svg>
+                      {{ pattern }}
+                    </li>
+                  </ul>
                 </div>
               </div>
               
+              <!-- Confidence Scores -->
               <div v-if="payslip.data.debug_info.confidence_scores" class="space-y-2">
-                <h4 class="font-semibold text-sm">AI Confidence Scores</h4>
-                <div class="space-y-2">
+                <h4 class="font-semibold text-sm">AI Field Confidence Scores</h4>
+                <div class="space-y-3 max-h-48 overflow-y-auto">
                   <div 
                     v-for="(score, field) in payslip.data.debug_info.confidence_scores" 
                     :key="field"
-                    class="flex items-center justify-between py-2 border-b border-muted text-sm"
+                    class="space-y-1"
                   >
-                    <span class="text-muted-foreground capitalize">{{ field.replace('_', ' ') }}</span>
-                    <div class="flex items-center gap-2">
-                      <div class="w-16 h-2 bg-muted rounded-full overflow-hidden">
-                        <div 
-                          class="h-full bg-gradient-to-r from-red-500 via-yellow-500 to-green-500 transition-all duration-300"
-                          :style="{ width: `${score}%` }"
-                        ></div>
-                      </div>
-                      <span class="font-mono font-medium w-10 text-right">{{ score }}%</span>
+                    <div class="flex items-center justify-between text-sm">
+                      <span class="text-muted-foreground capitalize font-medium">{{ field.replace(/_/g, ' ') }}</span>
+                      <span class="font-mono font-medium">{{ score }}%</span>
+                    </div>
+                    <div class="w-full bg-gray-200 rounded-full h-1.5">
+                      <div 
+                        class="h-1.5 rounded-full transition-all duration-300"
+                        :class="score >= 90 ? 'bg-green-600' : score >= 70 ? 'bg-yellow-600' : 'bg-red-600'"
+                        :style="{ width: `${score}%` }"
+                      ></div>
                     </div>
                   </div>
                 </div>
-              </div>
-            </div>
-            
-            <div v-if="payslip.data.debug_info.extraction_patterns_found" class="space-y-2">
-              <h4 class="font-semibold text-sm">AI Extraction Patterns Found</h4>
-              <div class="bg-muted/50 rounded-lg p-3">
-                <ul class="list-disc list-inside space-y-1 text-sm text-muted-foreground">
-                  <li v-for="pattern in payslip.data.debug_info.extraction_patterns_found" :key="pattern">
-                    {{ pattern }}
-                  </li>
-                </ul>
               </div>
             </div>
           </CardContent>
@@ -351,6 +525,25 @@ interface PayslipData {
     extraction_patterns_found?: string[]
     confidence_scores?: Record<string, number>
   }
+  ic_number?: string
+  position?: string
+  department?: string
+  department_code?: string
+  kump_ptj?: string
+  pusat_pembayar?: string
+  cukai_kwsp?: string
+  bank_name?: string
+  bank_account?: string
+  individual_earnings?: {
+    code: string
+    description: string
+    amount: number
+  }[]
+  individual_deductions?: {
+    code: string
+    description: string
+    amount: number
+  }[]
 }
 
 interface Payslip {
@@ -385,7 +578,7 @@ const emit = defineEmits<{
 }>()
 
 const formatCurrency = (amount?: number) => {
-  if (!amount) return 'N/A'
+  if (amount === null || amount === undefined) return 'N/A'
   return new Intl.NumberFormat('ms-MY', {
     style: 'currency',
     currency: 'MYR'

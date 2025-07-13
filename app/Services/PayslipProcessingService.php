@@ -560,7 +560,7 @@ class PayslipProcessingService
     }
 
     /**
-     * Extract data from tabular sections (Pendapatan and Potongan)
+     * Extract data from tabular sections (earnings and deductions)
      */
     private function extractTabularData(string $text): array
     {
@@ -574,35 +574,45 @@ class PayslipProcessingService
         
         $lines = explode("\n", $text);
         $currentSection = null;
+        $isInEarningsSection = false;
+        $isInDeductionsSection = false;
         
-        foreach ($lines as $line) {
+        foreach ($lines as $lineIndex => $line) {
             $line = trim($line);
             
             // Detect section headers
-            if (preg_match('/^pendapatan\s*$/i', $line)) {
+            if (preg_match('/^pendapatan\s*$/i', $line) || preg_match('/^earnings?\s*$/i', $line)) {
                 $currentSection = 'earnings';
+                $isInEarningsSection = true;
+                $isInDeductionsSection = false;
                 continue;
-            } elseif (preg_match('/^potongan\s*$/i', $line)) {
+            } elseif (preg_match('/^potongan\s*$/i', $line) || preg_match('/^deductions?\s*$/i', $line)) {
                 $currentSection = 'deductions';
+                $isInEarningsSection = false;
+                $isInDeductionsSection = true;
                 continue;
             } elseif (preg_match('/jumlah\s+(pendapatan|potongan)/i', $line)) {
                 $currentSection = 'summary';
+                $isInEarningsSection = false;
+                $isInDeductionsSection = false;
                 continue;
             }
             
-            // Skip header lines
-            if (preg_match('/amaun\s+\(rm\)/i', $line) || preg_match('/^\s*$/i', $line)) {
+            // Skip header lines and empty lines
+            if (preg_match('/(?:amaun|amount)\s*\(rm\)/i', $line) || 
+                preg_match('/^\s*$/i', $line) || 
+                preg_match('/^-+$/', $line)) {
                 continue;
             }
             
-            // Extract earnings data
-            if ($currentSection === 'earnings') {
-                // Pattern: "0001 Gaji Pokok 3,365.73" or "0001 Gaji Pokok	3,365.73"
-                if (preg_match('/(\d{4})\s+(.+?)\s+([\d,]+\.\d{2})/i', $line, $matches)) {
-                    $code = $matches[1];
-                    $description = trim($matches[2]);
-                    $amount = (float) str_replace(',', '', $matches[3]);
-                    
+            // Enhanced pattern for earnings/deductions with improved flexibility
+            // Pattern 1: "CODE Description Amount" (most common format)
+            if (preg_match('/(\d{4})\s+(.+?)\s+([\d,]+\.\d{2})\s*$/i', $line, $matches)) {
+                $code = $matches[1];
+                $description = trim($matches[2]);
+                $amount = (float) str_replace(',', '', $matches[3]);
+                
+                if ($isInEarningsSection || $currentSection === 'earnings') {
                     $data['individual_earnings'][] = [
                         'code' => $code,
                         'description' => $description,
@@ -610,31 +620,89 @@ class PayslipProcessingService
                     ];
                     
                     // Extract Gaji Pokok specifically
-                    if (preg_match('/gaji\s+pokok/i', $description) && $amount > 1000 && $amount < 50000) {
+                    if (preg_match('/gaji\s+pokok/i', $description) && $amount > 100 && $amount < 50000) {
                         $data['gaji_pokok'] = $amount;
                     }
-                }
-                
-                // Alternative pattern: code and description on separate lines
-                if (preg_match('/^(\d{4})\s*$/i', $line, $matches)) {
-                    $code = $matches[1];
-                    // Look for description and amount in next few lines
-                    // This is handled by the main extraction logic
-                }
-            }
-            
-            // Extract deductions data
-            if ($currentSection === 'deductions') {
-                if (preg_match('/(\d{4})\s+(.+?)\s+([\d,]+\.\d{2})/i', $line, $matches)) {
-                    $code = $matches[1];
-                    $description = trim($matches[2]);
-                    $amount = (float) str_replace(',', '', $matches[3]);
-                    
+                } elseif ($isInDeductionsSection || $currentSection === 'deductions') {
                     $data['individual_deductions'][] = [
                         'code' => $code,
                         'description' => $description,
                         'amount' => $amount
                     ];
+                }
+                continue;
+            }
+            
+            // Pattern 2: Handle multiline format where code and description might be separated
+            if (preg_match('/^(\d{4})\s+(.+?)\s*$/i', $line, $matches)) {
+                $code = $matches[1];
+                $description = trim($matches[2]);
+                
+                // Look for amount in the next few lines
+                for ($i = 1; $i <= 3 && ($lineIndex + $i) < count($lines); $i++) {
+                    $nextLine = trim($lines[$lineIndex + $i]);
+                    if (preg_match('/^([\d,]+\.\d{2})\s*$/', $nextLine, $amountMatches)) {
+                        $amount = (float) str_replace(',', '', $amountMatches[1]);
+                        
+                        if ($isInEarningsSection || $currentSection === 'earnings') {
+                            $data['individual_earnings'][] = [
+                                'code' => $code,
+                                'description' => $description,
+                                'amount' => $amount
+                            ];
+                            
+                            if (preg_match('/gaji\s+pokok/i', $description) && $amount > 100 && $amount < 50000) {
+                                $data['gaji_pokok'] = $amount;
+                            }
+                        } elseif ($isInDeductionsSection || $currentSection === 'deductions') {
+                            $data['individual_deductions'][] = [
+                                'code' => $code,
+                                'description' => $description,
+                                'amount' => $amount
+                            ];
+                        }
+                        break;
+                    }
+                }
+                continue;
+            }
+            
+            // Pattern 3: Tabular format with spaces/tabs
+            if (preg_match('/(\d{4})\s+([^0-9]+?)\s+([\d,]+\.\d{2})/i', $line, $matches)) {
+                $code = $matches[1];
+                $description = trim($matches[2]);
+                $amount = (float) str_replace(',', '', $matches[3]);
+                
+                if ($isInEarningsSection || $currentSection === 'earnings') {
+                    $data['individual_earnings'][] = [
+                        'code' => $code,
+                        'description' => $description,
+                        'amount' => $amount
+                    ];
+                    
+                    if (preg_match('/gaji\s+pokok/i', $description) && $amount > 100 && $amount < 50000) {
+                        $data['gaji_pokok'] = $amount;
+                    }
+                } elseif ($isInDeductionsSection || $currentSection === 'deductions') {
+                    $data['individual_deductions'][] = [
+                        'code' => $code,
+                        'description' => $description,
+                        'amount' => $amount
+                    ];
+                }
+            }
+            
+            // Auto-detect section based on common codes if section headers are missing
+            if (!$isInEarningsSection && !$isInDeductionsSection) {
+                // Earnings codes typically start with 0-3
+                if (preg_match('/^([0-3]\d{3})\s/', $line)) {
+                    $isInEarningsSection = true;
+                    $currentSection = 'earnings';
+                }
+                // Deduction codes typically start with 4-9
+                elseif (preg_match('/^([4-9]\d{3})\s/', $line)) {
+                    $isInDeductionsSection = true;
+                    $currentSection = 'deductions';
                 }
             }
         }
@@ -655,6 +723,74 @@ class PayslipProcessingService
         }
         
         return $data;
+    }
+
+    /**
+     * Extract additional fields from Malaysian government payslips
+     */
+    private function extractAdditionalFields(string $text): array
+    {
+        $data = [
+            'ic_number' => null,
+            'department' => null,
+            'department_code' => null,
+            'position' => null,
+            'bank_name' => null,
+            'bank_account' => null,
+            'kump_ptj' => null,
+            'pusat_pembayar' => null,
+            'cukai_kwsp' => null,
+        ];
+
+        $lines = explode("\n", $text);
+        
+        foreach ($lines as $line) {
+            $line = trim($line);
+            
+            // Extract IC/Passport number (K/P)
+            if (preg_match('/no\.?\s*k\/p\s*:\s*(\d{6}-\d{2}-\d{4})/i', $line, $matches)) {
+                $data['ic_number'] = $matches[1];
+            }
+            
+            // Extract department information
+            if (preg_match('/pej\.?\s*perakaunan\s*:\s*(\d+)\s*(.+?)(?:nama|$)/i', $line, $matches)) {
+                $data['department_code'] = $matches[1];
+                $data['department'] = trim($matches[2]);
+            }
+            
+            // Extract position/grade information
+            if (preg_match('/k\.pkja\/sub\s+pkja\s*:\s*([A-Z]+)\s*\/\s*(\d+)\s*(.+?)(?:bulan|kump|$)/i', $line, $matches)) {
+                $data['position'] = trim($matches[1] . '/' . $matches[2] . ' ' . $matches[3]);
+            }
+            
+            // Extract Kump PTJ/PTJ information
+            if (preg_match('/kump\s+ptj\/ptj\s*:\s*(\d+)\s*\/\s*(\d+)/i', $line, $matches)) {
+                $data['kump_ptj'] = $matches[1] . '/' . $matches[2];
+            }
+            
+            // Extract Pusat Pembayar
+            if (preg_match('/pusat\s+pembayar\s*:\s*(\d+)\s*(.+?)(?:no\s+cukai|$)/i', $line, $matches)) {
+                $data['pusat_pembayar'] = trim($matches[1] . ' ' . $matches[2]);
+            }
+            
+            // Extract No Cukai/KWSP
+            if (preg_match('/no\s+cukai\/kwsp\s*:\s*(\d+)\s*\/\s*(\d+)/i', $line, $matches)) {
+                $data['cukai_kwsp'] = $matches[1] . '/' . $matches[2];
+            }
+            
+            // Extract bank information
+            if (preg_match('/bank\s*:\s*([A-Z]+)/i', $line, $matches)) {
+                $data['bank_name'] = $matches[1];
+            }
+            
+            if (preg_match('/no\s+akaun\s+bank\s*:\s*(\d+[X]+)/i', $line, $matches)) {
+                $data['bank_account'] = $matches[1];
+            }
+        }
+        
+        return array_filter($data, function($value) {
+            return $value !== null;
+        });
     }
 
     /**
@@ -714,10 +850,17 @@ class PayslipProcessingService
         // Extract data from tabular sections (HIGHEST PRIORITY for earnings/deductions)
         $tabularData = $this->extractTabularData($text);
         foreach ($tabularData as $field => $value) {
-            if ($value !== null && in_array($field, ['gaji_pokok', 'jumlah_pendapatan', 'jumlah_potongan'])) {
-                $data[$field] = $value;
-                $data['debug_patterns'][] = "{$field}: extracted from tabular section (PRIORITY)";
-                $data['confidence_scores'][$field] = 98; // Highest confidence for tabular extraction
+            if ($value !== null) {
+                if (in_array($field, ['gaji_pokok', 'jumlah_pendapatan', 'jumlah_potongan'])) {
+                    $data[$field] = $value;
+                    $data['debug_patterns'][] = "{$field}: extracted from tabular section (PRIORITY)";
+                    $data['confidence_scores'][$field] = 98; // Highest confidence for tabular extraction
+                } elseif (in_array($field, ['individual_earnings', 'individual_deductions'])) {
+                    // Merge arrays for individual items
+                    $data[$field] = $value;
+                    $data['debug_patterns'][] = "{$field}: extracted " . count($value) . " items from tabular section";
+                    $data['confidence_scores'][$field] = 97; // High confidence for individual items
+                }
             }
         }
 
@@ -812,6 +955,10 @@ class PayslipProcessingService
                 }
             }
         }
+
+        // Extract additional fields for more comprehensive data capture
+        $additionalData = $this->extractAdditionalFields($cleanText);
+        $data = array_merge($data, $additionalData);
 
         return $data;
     }
@@ -1074,95 +1221,90 @@ class PayslipProcessingService
         $this->extractionPatterns = [
             'nama' => [
                 [
-                    'regex' => '/nama\s*:\s*([A-Z][A-Z\s]+(?:BIN|BINTI|A\/L|A\/P)[A-Z\s]+?)(?:\s+NO)?\s*$/im',
-                    'description' => 'Name with Malaysian name patterns (excluding NO suffix)',
+                    'regex' => '/nama\s*:\s*([A-Z][A-Z\s]+(?:BIN|BINTI)\s+[A-Z\s]+)(?:\s|$)/im',
+                    'description' => 'Name with Malaysian name patterns (BIN/BINTI)',
                     'confidence_weight' => 0.95
                 ],
                 [
-                    'regex' => '/nama\s*:\s*([^\r\n]+?)(?=\s*(?:no\.?\s*gaji|employee|$))/im',
-                    'description' => 'Name field from payslip header',
+                    'regex' => '/nama\s*:\s*([A-Z][A-Z\s]{10,50})(?:\s*no\.?\s*gaji|\s*$)/im',
+                    'description' => 'Name followed by employee number or end',
                     'confidence_weight' => 0.9
                 ],
                 [
-                    'regex' => '/nama\s*\n\s*:\s*([^\r\n]+)/im',
-                    'description' => 'Name in multiline format',
-                    'confidence_weight' => 0.9
+                    'regex' => '/nama\s*:\s*([A-Z][A-Z\s]{5,})(?=\s*(?:no\.?\s*gaji|no\.?\s*k\/p|$))/im',
+                    'description' => 'Name before next field or end of line',
+                    'confidence_weight' => 0.85
                 ],
                 [
-                    'regex' => '/^\s*nama\s*:\s*(.+?)$/im',
-                    'description' => 'Name on dedicated line',
+                    'regex' => '/nama\s*[:\-]?\s*([^:\r\n]{5,50})(?:\s*no\.?\s*gaji|\r|\n|$)/im',
+                    'description' => 'Flexible name pattern',
                     'confidence_weight' => 0.8
                 ],
                 [
-                    'regex' => '/(?:nama|name)\s*[:\-]?\s*([A-Z][A-Za-z\s]+)/i',
-                    'description' => 'Flexible name pattern',
-                    'confidence_weight' => 0.7
+                    'regex' => '/nama\s*:\s*([A-Z\s]{3,})(?:\s*:\s*|\s*no\.)/im',
+                    'description' => 'Name with uppercase letters and spaces',
+                    'confidence_weight' => 0.75
                 ]
             ],
             'no_gaji' => [
                 [
-                    'regex' => '/no\.?\s*gaji\s*:\s*(\d{6,})/im',
-                    'description' => 'Employee number with at least 6 digits',
+                    'regex' => '/no\.?\s*gaji\s*:\s*(\d{7,9})\s*(?:no\.?\s*k\/p|$)/im',
+                    'description' => 'Employee number 7-9 digits before K/P or end',
                     'confidence_weight' => 0.95
                 ],
                 [
-                    'regex' => '/no\.?\s*gaji\s*:\s*([A-Z0-9]{6,})/im',
-                    'description' => 'Employee number alphanumeric',
+                    'regex' => '/no\.?\s*gaji\s*:\s*(\d{6,})/im',
+                    'description' => 'Employee number with at least 6 digits',
                     'confidence_weight' => 0.9
                 ],
                 [
-                    'regex' => '/(?:no\.?\s*gaji|employee\s*(?:id|no))\s*[:\-]?\s*(\d+)/im',
-                    'description' => 'Flexible employee number pattern',
+                    'regex' => '/(?:no\.?\s*gaji|employee\s*(?:id|no))\s*[:\-]?\s*([A-Z0-9]{6,})/im',
+                    'description' => 'Alphanumeric employee number',
                     'confidence_weight' => 0.85
                 ],
                 [
-                    'regex' => '/no\.?\s*gaji\s*\n\s*:\s*([a-z0-9]+)/im',
+                    'regex' => '/no\.?\s*gaji\s*\n?\s*:\s*([a-z0-9]+)/im',
                     'description' => 'Employee number in multiline format',
                     'confidence_weight' => 0.8
-                ],
-                [
-                    'regex' => '/^\s*no\.?\s*gaji\s*:\s*([a-z0-9]+)/im',
-                    'description' => 'Employee number on dedicated line',
-                    'confidence_weight' => 0.75
                 ]
             ],
             'bulan' => [
                 [
                     'regex' => '/bulan\s+(\d{2}\/\d{4})/im',
                     'description' => 'Month in MM/YYYY format',
+                    'confidence_weight' => 0.95
+                ],
+                [
+                    'regex' => '/bulan[:\s]+([01]?\d\/20\d{2})/im',
+                    'description' => 'Month with year 20XX',
                     'confidence_weight' => 0.9
                 ],
                 [
                     'regex' => '/bulan\s*:\s*([^\r\n]+)/im',
                     'description' => 'Month field from header',
                     'confidence_weight' => 0.8
-                ],
-                [
-                    'regex' => '/^\s*bulan\s+(\d{2}\/\d{4})\s*$/im',
-                    'description' => 'Month on standalone line',
-                    'confidence_weight' => 0.9
                 ]
             ],
             'gaji_pokok' => [
+                [
+                    'regex' => '/0001\s+gaji\s+pokok[:\s]+([\d,]+\.\d{2})/im',
+                    'description' => 'Basic salary with code 0001 and 2 decimal places',
+                    'confidence_weight' => 0.98
+                ],
                 [
                     'regex' => '/0001\s+gaji\s+pokok\s+([\d,]+\.?\d*)/im',
                     'description' => 'Basic salary with code 0001',
                     'confidence_weight' => 0.95
                 ],
                 [
-                    'regex' => '/gaji\s+pokok\s*[:=]?\s*(?:RM\s*)?([\d,]+\.?\d*)/im',
-                    'description' => 'Basic salary with optional RM',
+                    'regex' => '/gaji\s+pokok\s*[:=]?\s*(?:RM\s*)?([\d,]+\.\d{2})/im',
+                    'description' => 'Basic salary with 2 decimal places',
                     'confidence_weight' => 0.9
                 ],
                 [
-                    'regex' => '/pendapatan.*?0001.*?(?:amaun|amount).*?([\d,]+\.?\d*).*?gaji\s+pokok/ims',
-                    'description' => 'Basic salary from earnings section with code',
+                    'regex' => '/pendapatan.*?0001.*?gaji\s+pokok.*?([\d,]+\.\d{2})/ims',
+                    'description' => 'Basic salary from earnings section',
                     'confidence_weight' => 0.85
-                ],
-                [
-                    'regex' => '/0001.*?gaji\s+pokok.*?([\d,]+\.?\d*)/ims',
-                    'description' => 'Basic salary with code 0001 (multiline)',
-                    'confidence_weight' => 0.8
                 ],
                 [
                     'regex' => '/gaji\s+pokok[^\d]+([\d,]+\.?\d*)/i',
@@ -1173,94 +1315,74 @@ class PayslipProcessingService
             'jumlah_pendapatan' => [
                 [
                     'regex' => '/jumlah\s+pendapatan\s*:\s*([\d,]+\.\d{2})/im',
-                    'description' => 'Total earnings from summary',
-                    'confidence_weight' => 0.9
+                    'description' => 'Total earnings with 2 decimal places',
+                    'confidence_weight' => 0.95
                 ],
                 [
                     'regex' => '/jumlah\s+pendapatan\s+([\d,]+\.\d{2})/im',
                     'description' => 'Total earnings without colon',
-                    'confidence_weight' => 0.8
+                    'confidence_weight' => 0.9
+                ],
+                [
+                    'regex' => '/jumlah\s+pendapatan[:\s]+([\d,]+\.?\d*)/im',
+                    'description' => 'Total earnings flexible format',
+                    'confidence_weight' => 0.85
                 ]
             ],
             'jumlah_potongan' => [
                 [
-                    'regex' => '/jumlah\s+potongan\s*:\s*([\d,]+\.?\d*)/im',
-                    'description' => 'Total deductions from summary with colon',
+                    'regex' => '/jumlah\s+potongan\s*:\s*([\d,]+\.\d{2})/im',
+                    'description' => 'Total deductions with 2 decimal places',
                     'confidence_weight' => 0.95
                 ],
                 [
-                    'regex' => '/jumlah\s+potongan\s+([\d,]+\.?\d*)/im',
-                    'description' => 'Total deductions from summary without colon',
+                    'regex' => '/jumlah\s+potongan\s+([\d,]+\.\d{2})/im',
+                    'description' => 'Total deductions without colon',
                     'confidence_weight' => 0.9
                 ],
                 [
-                    'regex' => '/jumlah\s+potongan\s*[:.\s]*\s*([\d,]+\.?\d*)/im',
-                    'description' => 'Total deductions with flexible spacing',
+                    'regex' => '/jumlah\s+potongan[:\s]+([\d,]+\.?\d*)/im',
+                    'description' => 'Total deductions flexible format',
                     'confidence_weight' => 0.85
                 ]
             ],
             'gaji_bersih' => [
                 [
-                    'regex' => '/gaji\s+bersih\s*:\s*([\d,]+\.?\d*)/im',
-                    'description' => 'Net salary from summary with colon',
+                    'regex' => '/gaji\s+bersih\s*:\s*([\d,]+\.\d{2})/im',
+                    'description' => 'Net salary with 2 decimal places',
                     'confidence_weight' => 0.95
                 ],
                 [
-                    'regex' => '/gaji\s+bersih\s+([\d,]+\.?\d*)/im',
-                    'description' => 'Net salary from summary without colon',
+                    'regex' => '/gaji\s+bersih\s+([\d,]+\.\d{2})/im',
+                    'description' => 'Net salary without colon',
                     'confidence_weight' => 0.9
                 ],
                 [
-                    'regex' => '/gaji\s+bersih\s*[:.\s]*\s*([\d,]+\.?\d*)/im',
-                    'description' => 'Net salary with flexible spacing',
+                    'regex' => '/(?:net\s+salary|gaji\s+bersih)[:\s]+([\d,]+\.?\d*)/im',
+                    'description' => 'Net salary flexible pattern',
                     'confidence_weight' => 0.85
-                ],
-                [
-                    'regex' => '/pendapatan\s+bercukai\s*:\s*([\d,]+\.?\d*)/im',
-                    'description' => 'Net salary after pendapatan bercukai',
-                    'confidence_weight' => 0.9
                 ]
             ],
             'peratus_gaji_bersih' => [
                 [
-                    'regex' => '/%\s*peratus\s+gaji\s+bersih\s*:\s*([\d,]+\.?\d*)/im',
-                    'description' => 'Percentage with % symbol from summary',
+                    'regex' => '/peratus\s+gaji\s+bersih\s*:\s*([\d,]+\.\d{2})/im',
+                    'description' => 'Salary percentage with 2 decimal places',
                     'confidence_weight' => 0.95
                 ],
                 [
-                    'regex' => '/peratus\s+gaji\s+bersih\s*:\s*([\d,]+\.?\d*)/im',
-                    'description' => 'Percentage without % symbol from summary',
+                    'regex' => '/peratus\s+gaji\s+bersih\s+([\d,]+\.\d{2})/im',
+                    'description' => 'Salary percentage without colon',
                     'confidence_weight' => 0.9
                 ],
                 [
-                    'regex' => '/gaji\s+bersih\s*:\s*[\d,]+\.\d{2}\s+%?\s*peratus\s+gaji\s+bersih\s*:\s*([\d,]+\.?\d*)/im',
-                    'description' => 'Percentage after gaji bersih in same line',
-                    'confidence_weight' => 0.95
-                ],
-                [
-                    'regex' => '/%\s*peratus\s+gaji\s+bersih\s+([\d,]+\.?\d*)/im',
-                    'description' => 'Percentage with % symbol without colon',
-                    'confidence_weight' => 0.8
-                ],
-                [
-                    'regex' => '/peratus\s+gaji\s+bersih\s+([\d,]+\.?\d*)/im',
-                    'description' => 'Percentage without colon or symbol',
-                    'confidence_weight' => 0.8
-                ],
-                [
-                    'regex' => '/peratus\s+gaji\s*\n?\s*bersih\s*:\s*([\d,]+\.?\d*)/im',
-                    'description' => 'Percentage with possible line break',
+                    'regex' => '/(?:peratus|percentage)[:\s]+gaji[:\s]+bersih[:\s]+([\d,]+\.?\d*)/im',
+                    'description' => 'Salary percentage flexible pattern',
                     'confidence_weight' => 0.85
                 ],
                 [
-                    'regex' => '/peratus\s+gaji\s+bersih\s*[:.\s]*\s*([\d,]+\.?\d*)/im',
-                    'description' => 'Percentage with flexible spacing and separators',
+                    'regex' => '/peratus[:\s]+gaji[:\s]+bersih[:\s]+([\d,]+\.?\d*)%?/im',
+                    'description' => 'Salary percentage with optional % symbol',
                     'confidence_weight' => 0.8
-                ],
-                [
-                    'regex' => '/\b(\d{2}\.\d{1,2})%?\s*$/m',
-                    'description' => 'Standalone percentage at end of line (fallback)',
-                    'confidence_weight' => 0.6
                 ]
             ]
         ];
@@ -1360,13 +1482,25 @@ class PayslipProcessingService
 
     private function calculateDataCompleteness(array $data): float
     {
-        $importantFields = ['gaji_bersih', 'peratus_gaji_bersih', 'gaji_pokok', 'nama'];
+        $importantFields = [
+            'gaji_bersih', 'peratus_gaji_bersih', 'gaji_pokok', 'nama', 'no_gaji', 'bulan',
+            'jumlah_pendapatan', 'jumlah_potongan', 'ic_number', 'department'
+        ];
         $foundFields = 0;
         
         foreach ($importantFields as $field) {
-            if ($data[$field] !== null) {
+            if (!empty($data[$field])) {
                 $foundFields++;
             }
+        }
+        
+        // Add bonus points for individual earnings/deductions if available
+        if (!empty($data['individual_earnings']) && count($data['individual_earnings']) > 0) {
+            $foundFields += 0.5; // Half point for having detailed earnings
+        }
+        
+        if (!empty($data['individual_deductions']) && count($data['individual_deductions']) > 0) {
+            $foundFields += 0.5; // Half point for having detailed deductions
         }
         
         return round(($foundFields / count($importantFields)) * 100, 2);
@@ -1651,7 +1785,7 @@ class PayslipProcessingService
                 'Content-Type' => 'application/json'
             ])->post('https://api.pdf.co/v1/pdf/convert/to/png', [
                 'url' => $fileUrl,
-                'pages' => '1', // First page only
+                'pages' => '0', // First page is 0, not 1
                 'name' => 'payslip_image'
             ]);
             
@@ -1661,14 +1795,15 @@ class PayslipProcessingService
             
             $convertResult = $convertResponse->json();
             
-            if (!isset($convertResult['url'])) {
-                throw new \Exception('PDF.co conversion response missing URL: ' . json_encode($convertResult));
+            if (!isset($convertResult['urls']) || empty($convertResult['urls'])) {
+                throw new \Exception('PDF.co conversion response missing URLs: ' . json_encode($convertResult));
             }
             
-            $imageUrl = $convertResult['url'];
+            $imageUrl = $convertResult['urls'][0]; // Get the first image URL
             
             Log::info('PDF converted to image via PDF.co successfully', [
-                'image_url' => $imageUrl
+                'image_url' => $imageUrl,
+                'page_count' => $convertResult['pageCount'] ?? 1
             ]);
             
             // Step 3: Download the converted image

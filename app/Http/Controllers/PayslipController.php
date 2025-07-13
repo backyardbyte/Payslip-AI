@@ -10,6 +10,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log; // Added Log facade
 
 class PayslipController extends Controller
 {
@@ -601,13 +602,14 @@ class PayslipController extends Controller
     {
         $rawData = $payslip->extracted_data ?? [];
         
-        // Handle nested data structure - extract actual data from nested structure
-        $extractedData = $rawData['extracted_data'] ?? $rawData;
+        // The backend stores data in a flattened structure at the root level
+        // with optional nested 'extracted_data' for backwards compatibility
+        $extractedData = $rawData; // Use the root level data directly
         $qualityMetrics = $rawData['quality_metrics'] ?? [];
         $processingMetadata = $rawData['processing_metadata'] ?? [];
         $koperasiResults = $rawData['koperasi_results'] ?? [];
         
-        return [
+        $responseData = [
             'id' => $payslip->id,
             'job_id' => $payslip->id,
             'name' => basename($payslip->file_path),
@@ -624,6 +626,18 @@ class PayslipController extends Controller
                 'gaji_bersih' => $extractedData['gaji_bersih'] ?? null,
                 'peratus_gaji_bersih' => $extractedData['peratus_gaji_bersih'] ?? null,
                 'koperasi_results' => $koperasiResults,
+                // Additional fields
+                'ic_number' => $extractedData['ic_number'] ?? null,
+                'department' => $extractedData['department'] ?? null,
+                'department_code' => $extractedData['department_code'] ?? null,
+                'position' => $extractedData['position'] ?? null,
+                'bank_name' => $extractedData['bank_name'] ?? null,
+                'bank_account' => $extractedData['bank_account'] ?? null,
+                'kump_ptj' => $extractedData['kump_ptj'] ?? null,
+                'pusat_pembayar' => $extractedData['pusat_pembayar'] ?? null,
+                'cukai_kwsp' => $extractedData['cukai_kwsp'] ?? null,
+                'individual_earnings' => $extractedData['individual_earnings'] ?? [],
+                'individual_deductions' => $extractedData['individual_deductions'] ?? [],
                 'debug_info' => [
                     'text_length' => $processingMetadata['text_length'] ?? 0,
                     'extraction_patterns_found' => $extractedData['debug_patterns'] ?? [],
@@ -648,6 +662,8 @@ class PayslipController extends Controller
                 'email' => $payslip->user->email,
             ] : null,
         ];
+        
+        return $responseData;
     }
 
     /**
