@@ -7,7 +7,6 @@ use App\Jobs\ProcessPayslip;
 use App\Services\PayslipProcessingService;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Storage;
-use Spatie\PdfToText\Pdf;
 
 class TestPayslipProcessing extends Command
 {

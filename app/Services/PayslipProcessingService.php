@@ -8,7 +8,6 @@ use App\Services\SettingsService;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Cache;
-use Spatie\PdfToText\Pdf;
 use Illuminate\Support\Facades\Http;
 
 class PayslipProcessingService
@@ -134,7 +133,7 @@ class PayslipProcessingService
     }
 
     /**
-     * Extract text from file with multiple methods
+     * Extract text from file with PDF.co -> Google Vision ONLY
      */
     private function extractTextFromFile(Payslip $payslip): array
     {
@@ -142,73 +141,78 @@ class PayslipProcessingService
         $mimeType = Storage::mimeType($payslip->file_path);
         $text = '';
         $method = 'unknown';
-        $ocrResult = null;
 
         if ($mimeType === 'application/pdf') {
-            try {
-                // First try: Extract text directly from PDF
-                $text = $this->extractPdfText($filePath);
-                $method = 'pdftotext';
-                
-                // If we got very little text, the PDF might be scanned - try OCR
-                if (strlen(trim($text)) < 100) {
-                    Log::info('PDF text extraction yielded minimal text, trying OCR as well', [
-                        'payslip_id' => $payslip->id,
-                        'text_length' => strlen($text)
-                    ]);
-                    
-                    $ocrText = $this->performDirectPdfOCR($filePath);
-                    if (strlen($ocrText) > strlen($text)) {
-                        $text = $ocrText;
-                        $method = 'direct_pdf_ocr';
-                    }
-                }
-            } catch (\Exception $e) {
-                Log::info('PDF text extraction failed, falling back to OCR', [
-                    'payslip_id' => $payslip->id,
-                    'error' => $e->getMessage()
-                ]);
-                
-                // Fallback: Try direct PDF OCR (no image conversion needed)
-                try {
-                    $text = $this->performDirectPdfOCR($filePath);
-                    $method = 'direct_pdf_ocr_fallback';
-                } catch (\Exception $ocrException) {
-                    // Final fallback: Use Google Vision with PDF conversion
-                    $ocrMethod = $this->settingsService->get('ocr.method', 'google_vision');
-                    
-                    if ($ocrMethod === 'google_vision') {
-                        $text = $this->performGoogleVisionOCR($filePath);
-                        $method = 'google_vision_fallback';
-                    } else {
-                        $text = $this->performOCRSpace($filePath);
-                        $method = 'ocr_space_fallback';
-                    }
-                }
-                $ocrResult = null;
-            }
-        } else {
-            $ocrMethod = $this->settingsService->get('ocr.method', 'google_vision');
+            Log::info('Processing PDF using PDF.co -> Google Vision flow', [
+                'payslip_id' => $payslip->id,
+                'file_path' => $payslip->file_path
+            ]);
             
-            if ($ocrMethod === 'google_vision') {
-                $text = $this->performGoogleVisionOCR($filePath);
-                $method = 'google_vision';
-            } elseif ($ocrMethod === 'ocrspace') {
-                $text = $this->performOCRSpace($filePath);
-                $method = 'ocr_space';
-            } else {
-                $text = $this->performTesseractOCR($filePath);
-                $method = 'tesseract';
-            }
-            $ocrResult = null;
+            // For PDFs: ONLY use PDF.co -> Google Vision
+            $text = $this->performGoogleVisionOCR($filePath);
+            $method = 'pdfco_google_vision';
+            
+        } else {
+            Log::info('Processing image directly with Google Vision API', [
+                'payslip_id' => $payslip->id,
+                'mime_type' => $mimeType
+            ]);
+            
+            // For images: Direct Google Vision
+            $text = $this->performGoogleVisionOCR($filePath);
+            $method = 'direct_google_vision';
         }
+
+        Log::info('Text extraction completed', [
+            'payslip_id' => $payslip->id,
+            'method' => $method,
+            'text_length' => strlen($text)
+        ]);
 
         return [
             'text' => $text,
             'method' => $method,
             'text_length' => strlen($text),
-            'ocr_result' => $ocrResult,
+            'ocr_result' => null,
         ];
+    }
+
+    /**
+     * Clean and normalize OCR text
+     */
+    private function cleanOCRText(string $text): string
+    {
+        // Fix common OCR errors in Malaysian payslips
+        $fixes = [
+            // Fix common number recognition issues
+            '/(\d)\s+,\s+(\d)/' => '$1,$2', // Fix "1 , 234" to "1,234"
+            '/(\d)\s+\.\s+(\d)/' => '$1.$2', // Fix "123 . 45" to "123.45"
+            
+            // Fix common word recognition issues
+            '/gaj\s*i/i' => 'gaji',
+            '/pok\s*ok/i' => 'pokok',
+            '/pen\s*da\s*pa\s*tan/i' => 'pendapatan',
+            '/pot\s*on\s*gan/i' => 'potongan',
+            '/ber\s*sih/i' => 'bersih',
+            '/per\s*a\s*tus/i' => 'peratus',
+            '/jum\s*lah/i' => 'jumlah',
+            
+            // Fix spacing around colons
+            '/\s*:\s*/' => ': ',
+            
+            // Fix multiple spaces
+            '/\s+/' => ' ',
+            
+            // Fix common currency symbols
+            '/R\s*M/i' => 'RM',
+            '/r\s*m/i' => 'RM',
+        ];
+        
+        foreach ($fixes as $pattern => $replacement) {
+            $text = preg_replace($pattern, $replacement, $text);
+        }
+        
+        return trim($text);
     }
 
     /**
@@ -1390,241 +1394,6 @@ class PayslipProcessingService
         return false;
     }
 
-    // Simplified OCR methods
-    private function extractPdfText(string $filePath): string
-    {
-        $pdfToTextPath = $this->settingsService->get('ocr.pdftotext_path', '/usr/bin/pdftotext');
-        return (new Pdf($pdfToTextPath))->setPdf($filePath)->text();
-    }
-
-    private function performOCRSpace(string $filePath): string
-    {
-        // Fix API key retrieval - check if settings value is empty and fallback to env
-        $settingsApiKey = $this->settingsService->get('ocr.ocrspace_api_key');
-        $apiKey = !empty($settingsApiKey) ? $settingsApiKey : env('OCRSPACE_API_KEY');
-        
-        if (!$apiKey) {
-            throw new \Exception('OCR.space API key not configured. Please configure it in settings or .env file');
-        }
-        
-        $debugMode = $this->settingsService->get('advanced.enable_debug_mode', false);
-        
-        try {
-            // Read file and encode to base64
-            $fileData = file_get_contents($filePath);
-            $base64 = base64_encode($fileData);
-            
-            // Determine file type
-            $mimeType = mime_content_type($filePath);
-            
-            // Enhanced OCR.space settings optimized for Malaysian government payslips
-            $postData = [
-                'apikey' => $apiKey,
-                'base64Image' => 'data:' . $mimeType . ';base64,' . $base64,
-                // Remove language parameter for better compatibility with free API keys
-                'isOverlayRequired' => 'false', // False for better text extraction
-                'detectOrientation' => 'true',
-                'scale' => 'true',
-                'OCREngine' => '1', // Engine 1 is better for structured documents
-                'isTable' => 'true', // Critical for Malaysian payslip tabular format
-                'filetype' => 'PDF',
-                'isCreateSearchablePdf' => 'false',
-                'isSearchablePdfHideTextLayer' => 'false',
-                'detectCheckbox' => 'false',
-                'checkboxTemplate' => '0',
-            ];
-            
-            // Make API request
-            $ch = curl_init();
-            curl_setopt($ch, CURLOPT_URL, 'https://api.ocr.space/parse/image');
-            curl_setopt($ch, CURLOPT_POST, true);
-            curl_setopt($ch, CURLOPT_POSTFIELDS, $postData);
-            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-            $ocrTimeout = $this->settingsService->get('ocr.api_timeout', 120);
-            curl_setopt($ch, CURLOPT_TIMEOUT, $ocrTimeout);
-            curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 30);
-            curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
-            curl_setopt($ch, CURLOPT_USERAGENT, 'Payslip-AI/1.0');
-            curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
-            
-            $response = curl_exec($ch);
-            $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-            $curlError = curl_error($ch);
-            curl_close($ch);
-            
-            if ($curlError) {
-                throw new \Exception('OCR.space API request failed: ' . $curlError);
-            }
-            
-            if ($httpCode !== 200) {
-                throw new \Exception('OCR.space API returned HTTP ' . $httpCode);
-            }
-            
-            $result = json_decode($response, true);
-            
-            if (!$result) {
-                throw new \Exception('Invalid OCR.space API response: Failed to decode JSON. Raw response: ' . substr($response, 0, 500));
-            }
-            
-            if (!isset($result['ParsedResults'])) {
-                // Log full response for debugging
-                Log::error('OCR.space API response missing ParsedResults', [
-                    'response' => $result
-                ]);
-                throw new \Exception('Invalid OCR.space API response: Missing ParsedResults. Response: ' . json_encode($result));
-            }
-            
-            if (isset($result['ErrorMessage']) && !empty($result['ErrorMessage'])) {
-                $errorMsg = is_array($result['ErrorMessage']) ? implode(', ', $result['ErrorMessage']) : $result['ErrorMessage'];
-                throw new \Exception('OCR.space API error: ' . $errorMsg);
-            }
-            
-            if (isset($result['OCRExitCode']) && $result['OCRExitCode'] != 1) {
-                throw new \Exception('OCR.space API failed with exit code: ' . $result['OCRExitCode']);
-            }
-            
-            // Extract text from all parsed results
-            $extractedText = '';
-            foreach ($result['ParsedResults'] as $parsedResult) {
-                if (isset($parsedResult['ParsedText'])) {
-                    $extractedText .= $parsedResult['ParsedText'] . "\n";
-                }
-            }
-            
-            // If extraction is too short or seems poor quality, try Engine 2 as fallback
-            $shouldTryEngine2 = false;
-            if (strlen($extractedText) < 500) {
-                $shouldTryEngine2 = true;
-                Log::info('OCR text too short, will try Engine 2', ['length' => strlen($extractedText)]);
-            } elseif (!preg_match('/gaji|pendapatan|potongan/i', $extractedText)) {
-                $shouldTryEngine2 = true;
-                Log::info('OCR text missing key Malaysian payslip terms, will try Engine 2');
-            }
-            
-            if ($shouldTryEngine2 && $postData['OCREngine'] !== '2') {
-                Log::info('Trying OCR Engine 2 for better results');
-                
-                // Try again with Engine 2
-                $postData['OCREngine'] = '2';
-                
-                $ch2 = curl_init();
-                curl_setopt($ch2, CURLOPT_URL, 'https://api.ocr.space/parse/image');
-                curl_setopt($ch2, CURLOPT_POST, true);
-                curl_setopt($ch2, CURLOPT_POSTFIELDS, $postData);
-                curl_setopt($ch2, CURLOPT_RETURNTRANSFER, true);
-                curl_setopt($ch2, CURLOPT_TIMEOUT, $ocrTimeout);
-                curl_setopt($ch2, CURLOPT_CONNECTTIMEOUT, 30);
-                curl_setopt($ch2, CURLOPT_SSL_VERIFYPEER, false);
-                curl_setopt($ch2, CURLOPT_USERAGENT, 'Payslip-AI/1.0');
-                curl_setopt($ch2, CURLOPT_FOLLOWLOCATION, true);
-                
-                $response2 = curl_exec($ch2);
-                $httpCode2 = curl_getinfo($ch2, CURLINFO_HTTP_CODE);
-                curl_close($ch2);
-                
-                if ($httpCode2 === 200) {
-                    $result2 = json_decode($response2, true);
-                    if (isset($result2['ParsedResults'])) {
-                        $extractedText2 = '';
-                        foreach ($result2['ParsedResults'] as $parsedResult) {
-                            if (isset($parsedResult['ParsedText'])) {
-                                $extractedText2 .= $parsedResult['ParsedText'] . "\n";
-                            }
-                        }
-                        
-                        // Use Engine 2 result if it's longer or has better key terms
-                        $engine2Better = false;
-                        if (strlen($extractedText2) > strlen($extractedText) * 1.2) {
-                            $engine2Better = true;
-                        } elseif (preg_match_all('/gaji|pendapatan|potongan|peratus/i', $extractedText2) > 
-                                  preg_match_all('/gaji|pendapatan|potongan|peratus/i', $extractedText)) {
-                            $engine2Better = true;
-                        }
-                        
-                        if ($engine2Better) {
-                            Log::info('Using Engine 2 result (better quality)', [
-                                'engine1_length' => strlen($extractedText),
-                                'engine2_length' => strlen($extractedText2),
-                                'engine1_terms' => preg_match_all('/gaji|pendapatan|potongan|peratus/i', $extractedText),
-                                'engine2_terms' => preg_match_all('/gaji|pendapatan|potongan|peratus/i', $extractedText2)
-                            ]);
-                            $extractedText = $extractedText2;
-                        }
-                    }
-                }
-            }
-            
-            // Post-process the text for better Malaysian payslip parsing
-            $extractedText = $this->postProcessOCRText($extractedText);
-            
-            if ($debugMode) {
-                Log::info('PayslipProcessingService OCR.space extraction completed', [
-                    'text_length' => strlen($extractedText),
-                    'file_parse_status' => $result['ParsedResults'][0]['FileParseExitCode'] ?? 'unknown',
-                    'key_terms_found' => preg_match_all('/gaji|pendapatan|potongan|peratus/i', $extractedText)
-                ]);
-            }
-            
-            return trim($extractedText);
-            
-        } catch (\Exception $e) {
-            Log::error('PayslipProcessingService OCR.space processing failed', [
-                'error' => $e->getMessage(),
-                'file_path' => $filePath
-            ]);
-            
-            throw new \Exception('OCR.space processing failed: ' . $e->getMessage() . '. Please check your OCR.space API key configuration.');
-        }
-    }
-
-    /**
-     * Post-process OCR text to improve Malaysian payslip parsing
-     */
-    private function postProcessOCRText(string $text): string
-    {
-        // Fix common OCR errors in Malaysian payslips
-        $fixes = [
-            // Fix common number recognition issues
-            '/(\d)\s+,\s+(\d)/' => '$1,$2', // Fix "1 , 234" to "1,234"
-            '/(\d)\s+\.\s+(\d)/' => '$1.$2', // Fix "123 . 45" to "123.45"
-            
-            // Fix common word recognition issues
-            '/gaj\s*i/i' => 'gaji',
-            '/pok\s*ok/i' => 'pokok',
-            '/pen\s*da\s*pa\s*tan/i' => 'pendapatan',
-            '/pot\s*on\s*gan/i' => 'potongan',
-            '/ber\s*sih/i' => 'bersih',
-            '/per\s*a\s*tus/i' => 'peratus',
-            '/jum\s*lah/i' => 'jumlah',
-            
-            // Fix spacing around colons
-            '/\s*:\s*/' => ': ',
-            
-            // Fix multiple spaces
-            '/\s+/' => ' ',
-        ];
-        
-        foreach ($fixes as $pattern => $replacement) {
-            $text = preg_replace($pattern, $replacement, $text);
-        }
-        
-        return $text;
-    }
-
-    private function performTesseractOCR(string $filePath): string
-    {
-        // This method is a placeholder. Tesseract logic is complex and should
-        // be handled carefully, potentially with image preprocessing.
-        // For now, it will fall back to OCR.space if needed via the caller.
-        Log::warning('Tesseract OCR method called but not fully implemented in PayslipProcessingService. Falling back.', [
-            'file_path' => $filePath
-        ]);
-
-        // To avoid breaking flows that might select Tesseract, we can either
-        // throw an exception or, more gracefully, try OCR.space as a backup.
-        return $this->performOCRSpace($filePath);
-    }
-
     /**
      * Perform OCR using Google Vision API
      */
@@ -2039,79 +1808,6 @@ class PayslipProcessingService
             Log::info("Sent WhatsApp notification for payslip {$payslip->id} to {$payslip->whatsapp_phone}");
         } catch (\Exception $e) {
             Log::error("Failed to send WhatsApp notification for payslip {$payslip->id}: " . $e->getMessage());
-        }
-    }
-
-    /**
-     * Perform OCR directly on PDF without image conversion (using OCR.space)
-     */
-    private function performDirectPdfOCR(string $filePath): string
-    {
-        $settingsApiKey = $this->settingsService->get('ocr.ocrspace_api_key');
-        $apiKey = !empty($settingsApiKey) ? $settingsApiKey : env('OCRSPACE_API_KEY');
-        
-        if (!$apiKey) {
-            throw new \Exception('OCR.space API key not configured for direct PDF OCR');
-        }
-        
-        try {
-            // Read file and encode to base64
-            $fileData = file_get_contents($filePath);
-            $base64 = base64_encode($fileData);
-            
-            // OCR.space can handle PDF directly without conversion
-            $postData = [
-                'apikey' => $apiKey,
-                'base64Image' => 'data:application/pdf;base64,' . $base64,
-                'isOverlayRequired' => 'false',
-                'detectOrientation' => 'true',
-                'scale' => 'true',
-                'OCREngine' => '1',
-                'isTable' => 'true',
-                'filetype' => 'PDF',
-                'isCreateSearchablePdf' => 'false',
-                'isSearchablePdfHideTextLayer' => 'false',
-            ];
-            
-            // Make API request
-            $ch = curl_init();
-            curl_setopt($ch, CURLOPT_URL, 'https://api.ocr.space/parse/image');
-            curl_setopt($ch, CURLOPT_POST, true);
-            curl_setopt($ch, CURLOPT_POSTFIELDS, $postData);
-            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-            curl_setopt($ch, CURLOPT_TIMEOUT, 120);
-            curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 30);
-            curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
-            
-            $response = curl_exec($ch);
-            $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-            curl_close($ch);
-            
-            if ($httpCode !== 200) {
-                throw new \Exception('OCR.space API returned HTTP ' . $httpCode);
-            }
-            
-            $result = json_decode($response, true);
-            
-            if (!$result || !isset($result['ParsedResults'])) {
-                throw new \Exception('Invalid OCR.space API response');
-            }
-            
-            $extractedText = '';
-            foreach ($result['ParsedResults'] as $parsedResult) {
-                if (isset($parsedResult['ParsedText'])) {
-                    $extractedText .= $parsedResult['ParsedText'] . "\n";
-                }
-            }
-            
-            return $this->cleanOCRText(trim($extractedText));
-            
-        } catch (\Exception $e) {
-            Log::error('Direct PDF OCR failed', [
-                'error' => $e->getMessage(),
-                'pdf_path' => $filePath
-            ]);
-            throw $e;
         }
     }
 }  
