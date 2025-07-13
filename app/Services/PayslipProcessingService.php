@@ -1615,19 +1615,35 @@ class PayslipProcessingService
         }
         
         try {
-            // Step 1: Upload file to PDF.co
+            // Step 1: Upload file to PDF.co using base64 encoding
+            $fileData = file_get_contents($pdfPath);
+            $base64Data = base64_encode($fileData);
+            $fileName = basename($pdfPath);
+            
             $uploadResponse = Http::withHeaders([
                 'x-api-key' => $apiKey,
-                'Content-Type' => 'application/octet-stream'
-            ])->attach('file', file_get_contents($pdfPath), basename($pdfPath))
-              ->post('https://api.pdf.co/v1/file/upload');
+                'Content-Type' => 'application/json'
+            ])->post('https://api.pdf.co/v1/file/upload/base64', [
+                'file' => $base64Data,
+                'name' => $fileName
+            ]);
             
             if (!$uploadResponse->successful()) {
                 throw new \Exception('Failed to upload PDF to PDF.co: ' . $uploadResponse->body());
             }
             
             $uploadResult = $uploadResponse->json();
+            
+            if (!isset($uploadResult['url'])) {
+                throw new \Exception('PDF.co upload response missing URL: ' . json_encode($uploadResult));
+            }
+            
             $fileUrl = $uploadResult['url'];
+            
+            Log::info('PDF uploaded to PDF.co successfully', [
+                'file_url' => $fileUrl,
+                'file_size' => strlen($fileData)
+            ]);
             
             // Step 2: Convert PDF to image
             $convertResponse = Http::withHeaders([
@@ -1644,7 +1660,16 @@ class PayslipProcessingService
             }
             
             $convertResult = $convertResponse->json();
+            
+            if (!isset($convertResult['url'])) {
+                throw new \Exception('PDF.co conversion response missing URL: ' . json_encode($convertResult));
+            }
+            
             $imageUrl = $convertResult['url'];
+            
+            Log::info('PDF converted to image via PDF.co successfully', [
+                'image_url' => $imageUrl
+            ]);
             
             // Step 3: Download the converted image
             $imageResponse = Http::get($imageUrl);
@@ -1652,6 +1677,10 @@ class PayslipProcessingService
             if (!$imageResponse->successful()) {
                 throw new \Exception('Failed to download converted image from PDF.co');
             }
+            
+            Log::info('Image downloaded from PDF.co successfully', [
+                'image_size_kb' => round(strlen($imageResponse->body()) / 1024, 2)
+            ]);
             
             return base64_encode($imageResponse->body());
             
